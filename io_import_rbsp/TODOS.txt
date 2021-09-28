@@ -1,0 +1,7 @@
+build script:
+  pack latest bsp_tool
+  strip out extensions
+  build blender addon .zip:
+    exclude build files & tests
+
+disclaimers for steyk / dogecore involvement in apex material importing?
