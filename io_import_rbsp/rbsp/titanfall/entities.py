@@ -1,4 +1,5 @@
 import math
+import re
 from typing import Dict, List
 
 import bpy
@@ -107,3 +108,32 @@ def as_empties(bsp, master_collection):
                 entity_object[field] = entity[field]
         # TODO: once all ents are loaded, connect paths for keyframe_rope / path_track etc.
         # TODO: do a second pass of entities to apply parental relationships (based on targetnames)
+
+
+# trigger_multiple, trigger_once, trigger_hurt
+
+
+# ent_object_data["trigger_*"] = trigger_bounds
+def trigger_bounds(trigger_ent: Dict[str, str]) -> bpy.types.Mesh:
+    # TODO: only for entities with no mesh geometry
+    raise NotImplementedError()
+    # pattern_vector = re.compile(r"([^\s]+) ([^\s]+) ([^\s]+)")
+    # mins = list(map(float, pattern_vector.match(trigger_ent["*trigger_bounds_mins"])))
+    # maxs = list(map(float, pattern_vector.match(trigger_ent["*trigger_bounds_maxs"])))
+    # TODO: return mesh data for a cube scaled to mins & maxs
+
+
+# ent_object_data["trigger_*"] = trigger_bounds
+def trigger_bmesh(trigger_ent: Dict[str, str]) -> bpy.types.Mesh:
+    # TODO: only for entities with no mesh geometry
+    pattern_plane_key = re.compile(r"\*trigger_brush([0-9]+)_plane([0-9]+)")  # brush_index, plane_index
+    pattern_plane_value = re.compile(r"([^\s]+) ([^\s]+) ([^\s]+) ([^\s]+)")  # *normal, distance
+    brushes = dict()
+    for key in trigger_ent.keys():
+        match = pattern_plane_key.match(key)
+        if match:
+            brush_index, plane_index = map(int, match.groups())
+            *normal, distance = map(float, pattern_plane_value.match(trigger_ent[key]).groups())
+            brushes[(brush_index, plane_index)] = (normal, distance)
+    raise NotImplementedError()
+    # TODO: use Logic&Trick's brush creation code from QtPyHammer here
