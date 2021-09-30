@@ -174,7 +174,7 @@ def trigger_brushes(entity: Entity) -> bpy.types.Mesh:
                     vertices[vertex] = bm.verts.new(vertex)
             if len(polygon) >= 3:
                 try:  # HACKY FIX
-                    bm.faces.new([vertices[v] for v in polygon])
+                    bm.faces.new([vertices[v] for v in reversed(polygon)])
                 except ValueError:
                     pass  # "face already exists"
     mesh_data_name = name_of(entity)
@@ -191,7 +191,9 @@ def trigger_brushes(entity: Entity) -> bpy.types.Mesh:
                "trigger_out_of_bounds": (0.913, 0.39, 0.003),  # yellow-green
                "trigger_soundscape": (0.004, 0.142, 0.944),  # blue
                # TODO: editorclasses
-               "trigger_death_fall": (0.966, 0.0, 0.966)}  # magenta
+               "trigger_death_fall": (0.966, 0.0, 0.966),  # magenta
+               "trigger_flag_set": (0.944, 0.201, 0.004),  # orange
+               "trigger_level_transition": (0.294, 0.996, 0.944)}  # lime green
     classname = entity.get("editorclass", entity["classname"])
     if classname not in bpy.data.materials:
         trigger_material = bpy.data.materials.new(classname)
