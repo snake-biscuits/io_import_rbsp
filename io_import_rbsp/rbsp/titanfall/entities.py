@@ -191,7 +191,7 @@ def trigger_brushes(entity: Entity) -> bpy.types.Mesh:
                "trigger_out_of_bounds": (0.913, 0.39, 0.003),  # yellow-green
                "trigger_soundscape": (0.004, 0.142, 0.944),  # blue
                # TODO: editorclasses
-               "trigger_death_fall": (0.895, 0.760, 0.966)}  # magenta
+               "trigger_death_fall": (0.966, 0.0, 0.966)}  # magenta
     classname = entity.get("editorclass", entity["classname"])
     if classname not in bpy.data.materials:
         trigger_material = bpy.data.materials.new(classname)
