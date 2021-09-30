@@ -72,8 +72,12 @@ Once you've extracted the files you need:
 ## FAQs
  * Why can't I see anything?
    - Titanfall Engine maps are huge, you need to increase your view distance
-   - `3D View > N > View > Clip Start: 16, End: 51200`
+   - `3D View > N > View > Clip Start: 16, End: 102400` (only affects that 3D view)
      - You will also need to increase the clipping distance for all cameras
+ * Why is my `.blend` file still huge after I deleted everything?
+   - Blender keeps deleted items cached in case you want to undo
+   - To clear this cache use: `File > Clean Up > Recursive Unused Data Blocks`
+   - Or set the **Outliner** display mode to **Orphan Data** & click **Purge**
  * It broke? Help?
    - Ask around on Discord, you might've missed a step someplace
    - If you're loading a brand new Apex map, it might not be supported yet
@@ -86,9 +90,13 @@ Once you've extracted the files you need:
 
 ### Further Questions
 I can be found on the following Titanfall related Discord Servers as `b!scuit#3659`:
-  * Titanfall 1: [TF Remnant Fleet](https://discord.gg/hKpQeJqdZR)
-  * Titanfall 2: [NoSkill Community](https://discord.gg/sEgmTKg)
-  * Apex Legends: [R5Reloaded](https://discord.com/invite/jqMkUdXrBr)
+  * Titanfall 1:
+    - [TF Remnant Fleet](https://discord.gg/hKpQeJqdZR)
+  * Titanfall 2:
+    - [NoSkill Community](https://discord.gg/sEgmTKg)
+    - Titanfall 2 Speedrunning Discord
+  * Apex Legends:
+    - [R5Reloaded](https://discord.com/invite/jqMkUdXrBr)
 <!-- TODO: add Titanfall Online & Titanfall 2 Custom Servers when they go public -->
 
 > NOTE: I am a fully time Uni Student in an Australian Timezone  

@@ -1,6 +1,6 @@
 import bpy
 from bpy_extras.io_utils import ImportHelper
-from bpy.props import StringProperty, BoolProperty
+from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Operator
 
 from . import bsp_tool
@@ -28,6 +28,10 @@ class ImportRBSP(Operator, ImportHelper):
     # TODO: load_materials EnumProperty: None, Names, Base Colours, Nodes
     load_geometry: BoolProperty(name="Geometry", description="Load .bsp Geometry", default=True)  # noqa F722
     load_entities: BoolProperty(name="Entities", description="Load .bsp Entities", default=True)  # noqa F722
+    load_triggers: EnumProperty(name="Triggers", description="Generate trigger geometry",  # noqa F722
+                                items=(("None", "No Triggers", "Empties at trigger entity origins"),  # noqa F722
+                                       ("Brushes", "Trigger Brushes", "Generate brushes from planes stored in the entity")),  # noqa F722
+                                default="Brushes")  # noqa F722
     # TODO: cubemap volumes?
     # TODO: load_lighting EnumProperty: None, Empties, All, PortalLights
     # TODO: load_prop_dynamic EnumProperty: None, Empties, Low-Poly, High-Poly
@@ -37,6 +41,7 @@ class ImportRBSP(Operator, ImportHelper):
     # TODO: Lightmaps with Pillow (PIL)
 
     def execute(self, context):
+        """Import selected .bsp"""
         bsp = bsp_tool.load_bsp(self.filepath)
         import_script = {bsp_tool.branches.respawn.titanfall: rbsp.titanfall,
                          bsp_tool.branches.respawn.titanfall2: rbsp.titanfall2,
@@ -57,9 +62,17 @@ class ImportRBSP(Operator, ImportHelper):
             # TODO: load specific model / mesh (e.g. worldspawn only, skip tool brushes etc.)
             importer.geometry(bsp, master_collection, materials)
         # entities
+        triggers = ["trigger_capture_point", "trigger_hurt",
+                    "trigger_indoor_area", "trigger_multiple",
+                    "trigger_once", "trigger_out_of_bounds",
+                    "trigger_soundscape"]
+        if self.load_triggers == "Brushes":
+            trigger_brushes = {classname: importer.entities.trigger_brushes for classname in triggers}
+            importer.entities.ent_object_data.update(trigger_brushes)
         if self.load_entities:
             # TODO: link worldspawn to Model[0]
-            importer.entities.as_empties(bsp, master_collection)
+            importer.entities.all_entities(bsp, master_collection)
+            # NOTE: includes lights, square info_node* & speakers
             # NOTE: Eevee has limited lighting, try Cycles
         # props
         # TODO: import scale (Engine Units -> Inches)
