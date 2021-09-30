@@ -182,12 +182,23 @@ def trigger_brushes(entity: Entity) -> bpy.types.Mesh:
     bm.to_mesh(mesh_data)
     bm.free()
     mesh_data.update()
-    # HACK: apply trigger material
-    if "TOOLS\\TOOLSTRIGGER" not in bpy.data.materials:
-        trigger_material = bpy.data.materials.new("TOOLS\\TOOLSTRIGGER")
-        trigger_material.diffuse_color = (0.944, 0.048, 0.004, 0.25)
+    # trigger materials
+    palette = {"trigger_capture_point": (0.273, 0.104, 0.409),  # purple
+               "trigger_hurt": (0.944, 0.048, 0.004),  # red
+               "trigger_indoor_area": (0.003, 0.913, 0.442),  # teal
+               "trigger_multiple": (0.944, 0.201, 0.004),  # orange
+               "trigger_once": (0.944, 0.201, 0.004),  # orange
+               "trigger_out_of_bounds": (0.913, 0.39, 0.003),  # yellow-green
+               "trigger_soundscape": (0.004, 0.142, 0.944),  # blue
+               # TODO: editorclasses
+               "trigger_death_fall": (0.895, 0.760, 0.966)}  # magenta
+    classname = entity.get("editorclass", entity["classname"])
+    if classname not in bpy.data.materials:
+        trigger_material = bpy.data.materials.new(classname)
+        colour = palette.get(classname, (0.944, 0.048, 0.004))  # default: red
+        trigger_material.diffuse_color = (*colour, 0.25)
         trigger_material.blend_method = "BLEND"
-    trigger_material = bpy.data.materials["TOOLS\\TOOLSTRIGGER"]
+    trigger_material = bpy.data.materials[classname]
     mesh_data.materials.append(trigger_material)
     # mesh_data has no faces?
     return mesh_data
