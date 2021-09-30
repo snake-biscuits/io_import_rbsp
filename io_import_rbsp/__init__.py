@@ -10,7 +10,7 @@ from . import rbsp
 bl_info = {
     "name": "io_import_rbsp",
     "author": "Jared Ketterer (snake-biscuits / Bikkie)",
-    "version": (1, 1, 0),
+    "version": (1, 2, 0),
     "blender": (2, 93, 0),
     "location": "File > Import > Titanfall Engine .bsp",
     "description": "Import maps from Titanfall, Titanfall 2 & Apex Legends",

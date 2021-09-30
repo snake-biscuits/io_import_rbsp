@@ -8,6 +8,10 @@ import bpy
 import mathutils
 
 
+Entity = Dict[str, str]
+# ^ {"key": "value"}
+
+
 def srgb_to_linear(*srgb: List[float]) -> List[float]:
     """colourspace translation for lights"""
     linear = list()
@@ -32,7 +36,7 @@ def linear_to_srgb(*linear: List[float]) -> List[float]:
     return srgb
 
 
-def ent_to_light(entity: Dict[str, str]) -> bpy.types.PointLight:
+def ent_to_light(entity: Entity) -> bpy.types.PointLight:
     """Reference objects for entities"""
     light_name = entity.get("targetname", entity["classname"])
     # IdTech / IW / Source / Titanfall Engine light type
@@ -64,6 +68,10 @@ def ent_to_light(entity: Dict[str, str]) -> bpy.types.PointLight:
     return light
 
 
+def name_of(entity: Entity) -> str:
+    return entity.get("targetname", entity.get("editorclass", entity["classname"]))
+
+
 ent_object_data = {"light": ent_to_light, "light_spot": ent_to_light, "light_environment": ent_to_light,
                    "ambient_generic": lambda e: bpy.data.speakers.new(e.get("targetname", e["classname"]))}
 # ^ {"classname": new_object_data_func}
@@ -72,7 +80,7 @@ ent_object_data = {"light": ent_to_light, "light_spot": ent_to_light, "light_env
 # -- this is likely used for script based object classes (weapon pickups, cameras etc.)
 
 
-def all_entities(bsp, master_collection):
+def all_entities(bsp, master_collection: bpy.types.Collection):
     all_entities = (bsp.ENTITIES, bsp.ENTITIES_env, bsp.ENTITIES_fx,
                     bsp.ENTITIES_script, bsp.ENTITIES_snd, bsp.ENTITIES_spawn)
     block_names = ("bsp", "env", "fx", "script", "sound", "spawn")
@@ -83,7 +91,7 @@ def all_entities(bsp, master_collection):
         entities_collection.children.link(entity_collection)
         for entity in entity_block:
             object_data = ent_object_data.get(entity["classname"], lambda e: None)(entity)
-            name = entity.get("targetname", entity["classname"])
+            name = name_of(entity)
             entity_object = bpy.data.objects.new(name, object_data)
             if object_data is None:
                 entity_object.empty_display_type = "SPHERE"
@@ -98,7 +106,8 @@ def all_entities(bsp, master_collection):
             if entity.get("model", "").startswith("*"):
                 model_collection = bpy.data.collections.get(f"model #{entity['model'][1:]}")
                 if model_collection is not None:
-                    model_collection.name = entity.get("targetname", model_collection.name)
+                    if "targetname" in entity:
+                        model_collection.name = f"{model_collection.name} ({entity['targetname']})"
                     for mesh_object in model_collection.objects:
                         mesh_object.location = position
             # rotation
@@ -115,7 +124,7 @@ def all_entities(bsp, master_collection):
 
 
 # ent_object_data["trigger_*"] = trigger_bounds
-def trigger_brushes(entity: Dict[str, str]) -> bpy.types.Mesh:
+def trigger_brushes(entity: Entity) -> bpy.types.Mesh:
     bm = bmesh.new()
     # get brush planes
     pattern_plane_key = re.compile(r"\*trigger_brush_([0-9]+)_plane_([0-9]+)")
@@ -168,7 +177,7 @@ def trigger_brushes(entity: Dict[str, str]) -> bpy.types.Mesh:
                     bm.faces.new([vertices[v] for v in polygon])
                 except ValueError:
                     pass  # "face already exists"
-    mesh_data_name = entity.get("targetname", entity["classname"])
+    mesh_data_name = name_of(entity)
     mesh_data = bpy.data.meshes.new(mesh_data_name)
     bm.to_mesh(mesh_data)
     bm.free()

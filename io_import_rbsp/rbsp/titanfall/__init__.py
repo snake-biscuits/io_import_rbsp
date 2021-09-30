@@ -1,4 +1,6 @@
 __all__ = ["entities", "geometry", "materials", "props"]
+from typing import List
+
 import bmesh
 import bpy
 
@@ -7,7 +9,7 @@ from . import materials
 from . import props
 
 
-def geometry(bsp, master_collection, materials):
+def geometry(bsp, master_collection: bpy.types.Collection, materials: List[bpy.types.Material]):
     geometry_collection = bpy.data.collections.new("geometry")
     master_collection.children.link(geometry_collection)
     # load_model

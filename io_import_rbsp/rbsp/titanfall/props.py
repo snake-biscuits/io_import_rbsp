@@ -2,7 +2,7 @@ import bpy
 import mathutils
 
 
-def as_empties(bsp, master_collection):
+def as_empties(bsp, master_collection: bpy.types.Collection):
     """Requires all models to be extracted beforehand"""
     prop_collection = bpy.data.collections.new("static props")
     master_collection.children.link(prop_collection)
@@ -16,7 +16,7 @@ def as_empties(bsp, master_collection):
         prop_collection.objects.link(prop_object)
 
 
-def as_models(bsp, master_collection):
+def as_models(bsp, master_collection: bpy.types.Collection):
     raise NotImplementedError()
     # model_dir = os.path.join(game_dir, "models")
     # TODO: hook into SourceIO to import .mdl files
