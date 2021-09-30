@@ -9,15 +9,14 @@ from . import rbsp
 
 bl_info = {
     "name": "io_import_rbsp",
-    "author": "Jared Ketterer (Bikkie)",
-    "version": (1, 00, 0),
+    "author": "Jared Ketterer (snake-biscuits / Bikkie)",
+    "version": (1, 1, 0),
     "blender": (2, 93, 0),
     "location": "File > Import > Titanfall Engine .bsp",
     "description": "Import maps from Titanfall, Titanfall 2 & Apex Legends",
     "doc_url": "https://github.com/snake-biscuits/io_import_rbsp",
     "tracker_url": "https://github.com/snake-biscuits/io_import_rbsp/issues",
-    "category": "Import-Export"
-}
+    "category": "Import-Export"}
 
 
 class ImportRBSP(Operator, ImportHelper):
