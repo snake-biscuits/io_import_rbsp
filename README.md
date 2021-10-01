@@ -47,14 +47,14 @@ Once you've extracted the files you need:
 ## Related Tools
 
 ### Respawn VPK
- * [TitanfallVPKTool](https://github.com/p0358/TitanfallVPKTool)
+ * [Titanfall_VPKTool3.4_Portable](https://github.com/Wanty5883/Titanfall2/blob/master/tools/Titanfall_VPKTool3.4_Portable.zip) (GUI only)
+   - by `Cra0kalo` (currently Closed Source) **recommended**
+ * [TitanfallVPKTool](https://github.com/p0358/TitanfallVPKTool) (GUI & CLI)
    - by `P0358`
- * [UnoVPKTool](https://github.com/Unordinal/UnoVPKTool)
-   - by `Unordinal`
- * [RSPNVPK](https://github.com/squidgyberries/RSPNVPK)
+ * [RSPNVPK](https://github.com/squidgyberries/RSPNVPK) (CLI only)
    - Fork of `MrSteyk`'s Tool
- * [Titanfall_VPKTool3.4_Portable](https://github.com/Wanty5883/Titanfall2/blob/master/tools/Titanfall_VPKTool3.4_Portable.zip)
-   - by `Cra0kalo` (currently Closed Source)
+ * [UnoVPKTool](https://github.com/Unordinal/UnoVPKTool) (CLI only)
+   - by `Unordinal`
 
 ### Other
  * [SourceIO](https://github.com/REDxEYE/SourceIO)
