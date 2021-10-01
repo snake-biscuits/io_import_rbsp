@@ -183,17 +183,38 @@ def trigger_brushes(entity: Entity) -> bpy.types.Mesh:
     bm.free()
     mesh_data.update()
     # trigger materials
-    palette = {"trigger_capture_point": (0.273, 0.104, 0.409),  # purple
+    palette = {  # classnames
+               "envmap_volume": (1.0, 1.0, 1.0),
+               "light_probe_volume": (1.0, 1.0, 1.0),
+               "light_environment_volume": (1.0, 1.0, 1.0),
+               "trigger_capture_point": (0.273, 0.104, 0.409),  # purple
                "trigger_hurt": (0.944, 0.048, 0.004),  # red
                "trigger_indoor_area": (0.003, 0.913, 0.442),  # teal
                "trigger_multiple": (0.944, 0.201, 0.004),  # orange
                "trigger_once": (0.944, 0.201, 0.004),  # orange
                "trigger_out_of_bounds": (0.913, 0.39, 0.003),  # yellow-green
                "trigger_soundscape": (0.004, 0.142, 0.944),  # blue
-               # TODO: editorclasses
+               # editorclasses
+               "trigger_checkpoint": (1.0, 1.0, 1.0),
+               "trigger_checkpoint_forced": (1.0, 1.0, 1.0),
+               "trigger_checkpoint_safe": (1.0, 1.0, 1.0),
+               "trigger_checkpoint_silent": (1.0, 1.0, 1.0),
+               "trigger_checkpoint_to_safe_spots": (1.0, 1.0, 1.0),
+               "trigger_deadly_fog": (1.0, 1.0, 1.0),
                "trigger_death_fall": (0.966, 0.0, 0.966),  # magenta
+               "trigger_flag_clear": (0.944, 0.201, 0.004),  # orange
                "trigger_flag_set": (0.944, 0.201, 0.004),  # orange
-               "trigger_level_transition": (0.294, 0.996, 0.944)}  # lime green
+               "trigger_flag_touching": (1.0, 1.0, 1.0),
+               "trigger_friendly": (1.0, 1.0, 1.0),
+               "trigger_friendly_follow": (1.0, 1.0, 1.0),
+               "trigger_fw_territory": (1.0, 1.0, 1.0),
+               "trigger_level_transition": (0.294, 0.996, 0.944),  # lime green
+               "trigger_mp_spawn_zone": (1.0, 1.0, 1.0),
+               "trigger_no_grapple": (1.0, 1.0, 1.0),
+               "trigger_quickdeath": (1.0, 1.0, 1.0),
+               "trigger_quickdeath_checkpoint": (1.0, 1.0, 1.0),
+               "trigger_spawn": (1.0, 1.0, 1.0),
+               "trigger_teleporter": (1.0, 1.0, 1.0)}
     classname = entity.get("editorclass", entity["classname"])
     if classname not in bpy.data.materials:
         trigger_material = bpy.data.materials.new(classname)
