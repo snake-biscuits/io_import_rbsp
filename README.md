@@ -5,10 +5,10 @@ Blender 2.93 importer for `rBSP` files (Titanfall Engine `.bsp`)
 <!-- TODO: .gifs for guides -->
 ## Installation
  * Get Blender 2.93+ from [Steam](https://store.steampowered.com/app/365670/Blender/) / [Blender.org](https://www.blender.org/download/)
- * Head over to [releases](https://github.com/snake-biscuits/io_import_rbsp/releases/) & download `io_import_rbsp_v1.1.0_b2.93.zip`  
+ * Head over to [releases](https://github.com/snake-biscuits/io_import_rbsp/releases/) & download `io_import_rbsp_v1.2.0_b2.93.zip`  
 Then, in Blender:  
  * `Edit > Preferences > Add-ons > Install`
- * Find `io_import_rbsp_v1.1.0_b2.93.zip`
+ * Find `io_import_rbsp_v1.2.0_b2.93.zip`
  * Click `Install Addon`
  * Check the box to enable `Import-Export: io_import_rbsp`
 
