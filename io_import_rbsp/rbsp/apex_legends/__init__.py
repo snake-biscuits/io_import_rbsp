@@ -5,6 +5,8 @@ import bmesh
 import bpy
 
 from ..titanfall import entities, props
+# NOTE: titanfall brush entities differ significantly from r1 & 2
+# -- "*coll0" "???????????"
 from . import materials
 
 

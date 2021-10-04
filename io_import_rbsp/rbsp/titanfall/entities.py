@@ -125,6 +125,8 @@ def all_entities(bsp, master_collection: bpy.types.Collection):
 
 # ent_object_data["trigger_*"] = trigger_bounds
 def trigger_brushes(entity: Entity) -> bpy.types.Mesh:
+    if "*trigger_brush_mins" in entity:  # quick fix for Apex brush entities
+        return None  # false positive, no mesh data
     bm = bmesh.new()
     # get brush planes
     pattern_plane_key = re.compile(r"\*trigger_brush_([0-9]+)_plane_([0-9]+)")
