@@ -157,7 +157,7 @@ class LUMP(enum.Enum):
 #
 # TextureData -> TextureDataStringTable -> TextureDataStringTable
 # VertexReservedX -> Vertex
-#                |-> VertexNormal
+#                \-> VertexNormal
 #
 # LeafWaterData -> TextureData -> water material
 # NOTE: LeafWaterData is also used in calculating VPhysics / PHYSICS_COLLIDE
@@ -166,19 +166,22 @@ class LUMP(enum.Enum):
 # ??? -> Brush -?> Plane
 #
 # LightmapHeader -> LIGHTMAP_DATA_SKY
-#               |-> LIGHTMAP_DATA_REAL_TIME_LIGHTS
+#               \-> LIGHTMAP_DATA_REAL_TIME_LIGHTS
 #
 # Portal -?> PortalEdge -> PortalVertex
 # PortalEdgeRef -> PortalEdge
 # PortalVertRef -> PortalVertex
 # PortalEdgeIntersect -> PortalEdge?
-#                    |-> PortalVertex
+#                    \-> PortalVertex
 #
 # PortalEdgeIntersectHeader -> ???
 # NOTE: there are always as many intersect headers as edges
 # NOTE: there are also always as many vert refs as edge refs
 #
-# Grid probably defines the bounds of CM_GRID_CELLS, with CM_GRID_CELLS indexing other objects?
+# CM_GRID probably defines the bounds of CM_GRID_CELLS, with CM_GRID_CELLS indexing other objects?
+#
+# Grid -?> Brush -?> BrushSidePlaneOffset -?> Plane
+# (? * ? + ?) * 4 -> GridCell
 
 
 lump_header_address = {LUMP_ID: (16 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
@@ -604,7 +607,7 @@ SPECIAL_LUMP_CLASSES = {"ENTITY_PARTITIONS":         {0: EntityPartitions},
                         "ENTITIES":                  {0: shared.Entities},
                         # NOTE: .ent files are handled directly by the RespawnBsp class
                         "PAKFILE":                   {0: shared.PakFile},
-                        # "PHYSICS_COLLIDE":           {0: shared.PhysicsCollide},
+                        "PHYSICS_COLLIDE":           {0: shared.PhysicsCollide},
                         "TEXTURE_DATA_STRING_DATA":  {0: shared.TextureDataStringData}}
 
 GAME_LUMP_CLASSES = {"sprp": {12: lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropv12)}}

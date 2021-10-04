@@ -99,22 +99,12 @@ def read_lump_header(file, LUMP: enum.Enum) -> SourceLumpHeader:
 # MipTexture.flags -> TextureInfo.flags (Surface enum)
 
 # a rough map of the relationships between lumps:
-# Node -> Face -> Plane
-#             |-> DisplacementInfo -> DisplacementVertex
-#             |-> SurfEdge -> Edge -> Vertex
 #
-# PRIMITIVES or "water indices" are a leftover from Quake.
-# In the Source Engine they are used to correct for "t-junctions".
-# "t-junctions" are a type of innacuracy which arises in BSP construction.
-# In brush-based .bsp, Constructive Solid Geometry (CSG) operations occur.
-# CSG "slices" & can potentially merges brushes, this also helps define visleaves
-# (CSG operations are the same as the Boolen Modifier in Blender).
-# These "slices" must be applied to brush faces,
-# which are stored as a clockwise series of 3D points.
-# Some slices create erroneous edges, especially where func_detail meets world.
-# The PRIMITIVES lump forces a specific shape to compensate for these errors.
+#                     /-> SurfEdge -> Edge -> Vertex
+# Leaf -> Node -> Face -> Plane
+#                     \-> DisplacementInfo -> DisplacementVertex
 #
-# ClipPortalVertices are AreaPortal geometry
+# ClipPortalVertices are AreaPortal geometry [citation neeeded]
 
 
 # engine limits: (2013 SDK bspfile.h)
@@ -461,16 +451,6 @@ class OverlayFade(base.MappedArray):  # LUMP 60
     _format = "2f"
 
 
-class Plane(base.Struct):  # LUMP 1
-    """3D Plane defining shape, used for physics & BSP/CSG calculations?"""
-    normal: List[float]
-    distance: float
-    type: int  # flags for axis alignment, appears to be unused
-    __slots__ = ["normal", "distance", "type"]
-    _format = "4fi"
-    _arrays = {"normal": [*"xyz"]}
-
-
 class TextureData(base.Struct):  # LUMP 2
     """Data on this view of a texture (.vmt), indexed by TextureInfo"""
     reflectivity: List[float]
@@ -605,7 +585,7 @@ LUMP_CLASSES = {"AREAS":                 {0: Area},
                 "NODES":                 {0: Node},
                 "OVERLAY_FADES":         {0: OverlayFade},
                 "ORIGINAL_FACES":        {0: Face},
-                "PLANES":                {0: Plane},
+                "PLANES":                {0: quake.Plane},
                 "TEXTURE_DATA":          {0: TextureData},
                 "TEXTURE_INFO":          {0: TextureInfo},
                 "VERTICES":              {0: quake.Vertex},
@@ -616,7 +596,7 @@ LUMP_CLASSES = {"AREAS":                 {0: Area},
 SPECIAL_LUMP_CLASSES = {"ENTITIES":                 {0: shared.Entities},
                         "TEXTURE_DATA_STRING_DATA": {0: shared.TextureDataStringData},
                         "PAKFILE":                  {0: shared.PakFile},
-                        # "PHYSICS_COLLIDE":          {0: shared.PhysicsCollide}
+                        "PHYSICS_COLLIDE":          {0: shared.PhysicsCollide}
                         }
 
 # {"lump": {version: SpecialLumpClass}}
@@ -681,6 +661,9 @@ def vertices_of_face(bsp, face_index: int) -> List[float]:
 
 
 def t_junction_fixer(bsp, face: int, positions: List[List[float]], edges: List[List[float]]) -> List[List[float]]:
+    # TODO: look at primitives system
+    # https://github.com/magcius/noclip.website/blob/master/src/SourceEngine/BSPFile.ts#L1052
+    # https://github.com/magcius/noclip.website/blob/master/src/SourceEngine/BSPFile.ts#L1537
     # report to bsp.log rather than printing
     # bsp may need a method wrapper to give a warning to check the logs
     # face_index = bsp.FACES.index(face)
