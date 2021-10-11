@@ -93,7 +93,6 @@ I can be found on the following Titanfall related Discord Servers as `b!scuit#36
   * Titanfall 1:
     - [TF Remnant Fleet](https://discord.gg/hKpQeJqdZR)
   * Titanfall 2:
-    - [NoSkill Community](https://discord.gg/sEgmTKg)
     - Titanfall 2 Speedrunning Discord
   * Apex Legends:
     - [R5Reloaded](https://discord.com/invite/jqMkUdXrBr)
