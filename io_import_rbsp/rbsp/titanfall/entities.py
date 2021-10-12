@@ -113,8 +113,9 @@ def all_entities(bsp, master_collection: bpy.types.Collection):
             # rotation
             angles = [*map(lambda x: math.radians(float(x)), entity.get("angles", "0 0 0").split())]
             angles[0] = math.radians(-float(entity.get("pitch", -math.degrees(angles[0]))))
-            entity_object.rotation_euler = mathutils.Euler(angles, "YZX")
+            entity_object.rotation_euler = mathutils.Euler((angles[2], *angles[:2]))  # YZX -> XYZ
             # NOTE: default orientation is facing east (+X), props may appear rotated?
+            # TODO: test entity rotation matches in-game
             # TODO: further optimisation (props with shared worldmodel share mesh data) [ent_object_data]
             # set all key values as custom properties
             for field in entity:
