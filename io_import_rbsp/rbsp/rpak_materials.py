@@ -1,4 +1,4 @@
-# by MySteyk & Dogecore
+# by MrSteyk & Dogecore
 # TODO: extraction instructions & testing
 import json
 import os.path
