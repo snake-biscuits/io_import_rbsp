@@ -4,12 +4,16 @@ import struct
 from typing import List
 
 from .. import base
+from ..valve import source
 from . import titanfall
 
 
+FILE_MAGIC = b"rBSP"
+
 BSP_VERSION = 37
 
-GAMES = ["Titanfall 2"]
+GAME_PATHS = ["Titanfall 2"]
+
 GAME_VERSIONS = {"Titanfall 2": 37}
 
 
@@ -143,6 +147,10 @@ class LUMP(enum.Enum):
     SHADOW_MESH_INDICES = 0x007E
     SHADOW_MESH_MESHES = 0x007F
 
+
+# struct RespawnBspHeader { char file_magic[4]; int version, revision, lump_count; SourceLumpHeader headers[128]; };
+lump_header_address = {LUMP_ID: (16 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
+
 # Known lump changes from Titanfall -> Titanfall 2:
 # New:
 # UNUSED_4 -> LIGHTPROBE_PARENT_INFOS
@@ -182,9 +190,6 @@ class LUMP(enum.Enum):
 # PortalEdgeIntersectHeader -> ???
 # NOTE: there are always as many intersect headers as edges
 # NOTE: there are also always as many vert refs as edge refs
-
-
-lump_header_address = {LUMP_ID: (16 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
 
 
 # # classes for lumps, in alphabetical order::
@@ -239,9 +244,10 @@ class GameLump_SPRP:
         setattr(self, "model_names", [t[0].replace(b"\0", b"").decode() for t in model_names])
         prop_count, unknown_1, unknown_2 = struct.unpack("3i", sprp_lump.read(12))
         self.unknown_1, self.unknown_2 = unknown_1, unknown_2
-        prop_size = struct.calcsize(StaticPropClass._format)
-        props = struct.iter_unpack(StaticPropClass._format, sprp_lump.read(prop_count * prop_size))
-        setattr(self, "props", list(map(StaticPropClass, props)))
+        # TODO: if StaticPropClass is None: split into appropriate groups of bytes
+        read_size = struct.calcsize(StaticPropClass._format) * prop_count
+        props = struct.iter_unpack(StaticPropClass._format, sprp_lump.read(read_size))
+        setattr(self, "props", list(map(StaticPropClass.from_tuple, props)))
         # TODO: check if are there any leftover bytes at the end?
 
     def as_bytes(self) -> bytes:
@@ -261,6 +267,8 @@ LUMP_CLASSES["LIGHTMAP_DATA_REAL_TIME_LIGHTS_PAGE"] = {0: LightmapPage}
 LUMP_CLASSES.pop("LIGHTPROBE_REFERENCES")  # size doesn't match
 
 SPECIAL_LUMP_CLASSES = titanfall.SPECIAL_LUMP_CLASSES.copy()
+
+GAME_LUMP_HEADER = source.GameLumpHeader
 
 GAME_LUMP_CLASSES = {"sprp": {13: lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropv13)}}
 

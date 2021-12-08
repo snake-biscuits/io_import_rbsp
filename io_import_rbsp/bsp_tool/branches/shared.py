@@ -1,12 +1,11 @@
-import collections
-import enum
 import io
-import itertools
 import math
 import re
 import struct
 import zipfile
 from typing import Dict, List
+
+from . import physics  # noqa F401
 
 
 # TODO: adapt SpecialLumpClasses to be more in-line with lumps.BspLump subclasses
@@ -21,29 +20,21 @@ from typing import Dict, List
 # TODO: consider using __repr__ methods, as SpecialLumpClasses can get large
 
 
-# flag enums
-class SPRP_flags(enum.IntFlag):
-    FADES = 0x1  # use fade distances
-    USE_LIGHTING_ORIGIN = 0x2
-    NO_DRAW = 0x4    # computed at run time based on dx level
-    # the following are set in a level editor:
-    IGNORE_NORMALS = 0x8
-    NO_SHADOW = 0x10
-    SCREEN_SPACE_FADE = 0x20
-    # next 3 are for lighting compiler
-    NO_PER_VERTEX_LIGHTING = 0x40
-    NO_SELF_SHADOWING = 0x80
-    NO_PER_TEXEL_LIGHTING = 0x100
-    EDITOR_MASK = 0x1D8
-
-
 # Basic Lump Classes
+class Bytes(int):
+    _format = "b"
+
+
 class Ints(int):
     _format = "i"
 
 
 class Shorts(int):
     _format = "h"
+
+
+class UnsignedBytes(int):
+    _format = "b"
 
 
 class UnsignedInts(int):
@@ -63,7 +54,8 @@ class Entities(list):
         entities: List[Dict[str, str]] = list()
         # ^ [{"key": "value"}]
         # TODO: handle newlines in keys / values
-        for line_no, line in enumerate(raw_entities.decode(errors="ignore").splitlines()):
+        enumerated_lines = enumerate(raw_entities.decode(errors="ignore").splitlines())
+        for line_no, line in enumerated_lines:
             if re.match(r"^\s*$", line):  # line is blank / whitespace
                 continue
             if "{" in line:  # new entity
@@ -71,7 +63,20 @@ class Entities(list):
             elif '"' in line:
                 key_value_pair = re.search(r'"([^"]*)"\s"([^"]*)"', line)
                 if not key_value_pair:
-                    print(f"ERROR LOADING ENTITIES: Line {line_no:05d}:  {line}")
+                    open_key_value_pair = re.search(r'"([^"]*)"\s"([^"]*)', line)
+                    if not open_key_value_pair:
+                        RuntimeError(f"Unexpected line in entities: L{line_no}: {line.encode()}")
+                    key, value = open_key_value_pair.groups()
+                    # TODO: use regex to catch CRLF line endings & unexpected whitespace
+                    tail = re.search(r'([^"]*)"\s*$', line)
+                    while not tail:
+                        if "{" in line or "}" in line:
+                            RuntimeError(f"Unexpected line in entities: L{line_no}: {line.encode()}")
+                        line_no, line = next(enumerated_lines)
+                        # NOTE: ^ might've broken line numbers?
+                        value += line
+                        tail = re.search(r'([^"]*)"\s*$', line)
+                    value += tail.groups()[0]
                     continue
                 key, value = key_value_pair.groups()
                 if key not in ent:
@@ -119,38 +124,6 @@ class Entities(list):
         return b"\n".join(map(lambda e: e.encode("ascii"), entities)) + b"\n\x00"
 
 
-class GameLump_SPRP:  # Mostly for Source
-    def __init__(self, raw_sprp_lump: bytes, StaticPropClass: object):
-        """Get StaticPropClass from GameLump version"""
-        # # lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropvXX)
-        sprp_lump = io.BytesIO(raw_sprp_lump)
-        model_name_count = int.from_bytes(sprp_lump.read(4), "little")
-        model_names = struct.iter_unpack("128s", sprp_lump.read(128 * model_name_count))
-        setattr(self, "model_names", [t[0].replace(b"\0", b"").decode() for t in model_names])
-        leaf_count = int.from_bytes(sprp_lump.read(4), "little")
-        leaves = itertools.chain(*struct.iter_unpack("H", sprp_lump.read(2 * leaf_count)))
-        setattr(self, "leaves", list(leaves))
-        prop_count = int.from_bytes(sprp_lump.read(4), "little")
-        read_size = struct.calcsize(StaticPropClass._format) * prop_count
-        props = struct.iter_unpack(StaticPropClass._format, sprp_lump.read(read_size))
-        setattr(self, "props", list(map(StaticPropClass, props)))
-        here = sprp_lump.tell()
-        end = sprp_lump.seek(0, 2)
-        assert here == end, "Had some leftover bytes, bad format"
-
-    def as_bytes(self) -> bytes:
-        if len(self.props) > 0:
-            prop_format = self.props[0]._format
-        else:
-            prop_format = ""
-        return b"".join([int.to_bytes(len(self.model_names), 4, "little"),
-                         *[struct.pack("128s", n) for n in self.model_names],
-                         int.to_bytes(len(self.leaves), 4, "little"),
-                         *[struct.pack("H", L) for L in self.leaves],
-                         int.to_bytes(len(self.props), 4, "little"),
-                         *[struct.pack(prop_format, *p.flat()) for p in self.props]])
-
-
 class PakFile(zipfile.ZipFile):
     def __init__(self, raw_zip: bytes):
         self._buffer = io.BytesIO(raw_zip)
@@ -158,88 +131,6 @@ class PakFile(zipfile.ZipFile):
 
     def as_bytes(self) -> bytes:
         return self._buffer.getvalue()
-
-
-# PhysicsBlock headers
-CollideHeader = collections.namedtuple("swapcollideheader_t", ["id", "version", "model_type"])
-# struct swapcollideheader_t { int size, vphysicsID; short version, model_type; };
-SurfaceHeader = collections.namedtuple("swapcompactsurfaceheader_t", ["size", "drag_axis_areas", "axis_map_size"])
-# struct swapcompactsurfaceheader_t { int surfaceSize; Vector dragAxisAreas; int axisMapSize; };
-MoppHeader = collections.namedtuple("swapmoppsurfaceheader_t", ["size"])
-# struct swapmoppsurfaceheader_t { int moppSize; };
-
-
-class PhysicsBlock:  # TODO: actually process this data
-    # byte swapper: https://github.com/ValveSoftware/source-sdk-2013/blob/master/sp/src/utils/common/bsplib.cpp#L1677
-    def __init__(self, raw_lump: bytes):
-        """Editting not yet supported"""
-        self._raw = raw_lump
-        lump = io.BytesIO(raw_lump)
-        header = CollideHeader(*struct.unpack("4s2h", lump.read(8)))
-        assert header.id == b"VPHY", "if 'YHPV' byte order is flipped"
-        # version isn't checked by the byteswap, probably important for VPHYSICS
-        if header.model_type == 0:
-            size, *drag_axis_areas, axis_map_size = struct.unpack("i3fi", lump.read(20))
-            surface_header = SurfaceHeader(size, drag_axis_areas, axis_map_size)
-        elif header.model_type == 1:
-            surface_header = MoppHeader(*struct.unpack("i", lump.read(4)))
-        else:
-            raise RuntimeError("Invalid model type")
-        self.header = (header, surface_header)
-        self.data = lump.read(surface_header.size)
-        assert lump.tell() == len(raw_lump)
-
-    def as_bytes(self) -> bytes:
-        header, surface_header = self.header
-        if header.model_type == 0:
-            size, drag_axis_areas, axis_map_size = surface_header
-            surface_header = struct.pack("i3fi", len(self.data), *drag_axis_areas, axis_map_size)
-        elif header.model_type == 1:
-            surface_header = struct.pack("i", len(self.data))
-        else:
-            raise RuntimeError("Invalid model type")
-        header = struct.pack("4s2h", *header)
-        return b"".join([header, surface_header, self.data])
-
-
-# PhysicsCollide headers
-PhysicsHeader = collections.namedtuple("dphysmodel_t", ["model", "data_size", "script_size", "solid_count"])
-# struct dphysmodel_t { int model_index, data_size, keydata_size, solid_count; };
-
-
-class PhysicsCollide(list):
-    """[model_index: int, solids: List[bytes], script: bytes]"""
-    # passed to VCollideLoad in vphysics.dll
-    def __init__(self, raw_lump: bytes):
-        collision_models = list()
-        lump = io.BytesIO(raw_lump)
-        header = PhysicsHeader(*struct.unpack("4i", lump.read(16)))
-        while header != PhysicsHeader(-1, -1, 0, 0) and lump.tell() != len(raw_lump):
-            solids = list()
-            for i in range(header.solid_count):
-                # CPhysCollisionEntry->WriteCollisionBinary
-                cb_size = int.from_bytes(lump.read(4), "little")
-                solids.append(PhysicsBlock(lump.read(cb_size)))
-            # TODO: assert header.data_size bytes were read
-            script = lump.read(header.script_size)  # ascii
-            collision_models.append([header.model, solids, script])
-            header = PhysicsHeader(*struct.unpack("4i", lump.read(16)))
-        assert header == PhysicsHeader(-1, -1, 0, 0), "PhysicsCollide ended incorrectly"
-        super().__init__(collision_models)
-
-    def as_bytes(self) -> bytes:
-        def phy_bytes(collision_model):
-            model_index, solids, script = collision_model
-            phy_blocks = list()
-            for phy_block in solids:
-                collision_data = phy_block.as_bytes()
-                phy_blocks.append(len(collision_data).to_bytes(4, "little"))
-                phy_blocks.append(collision_data)
-            phy_block_bytes = b"".join(phy_blocks)
-            header = struct.pack("4i", model_index, len(phy_block_bytes), len(script), len(solids))
-            return b"".join([header, phy_block_bytes, script])
-        tail = struct.pack("4i", -1, -1, 0, 0)
-        return b"".join([*map(phy_bytes, self), tail])
 
 
 class TextureDataStringData(list):

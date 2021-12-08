@@ -5,21 +5,23 @@ import struct
 from typing import List
 
 from .. import base
-from .. import shared
 from . import source
 
 
-BSP_VERSION = 20
-# NOTE: v20 Source BSPs differ widely, since many forks are of this version
+FILE_MAGIC = b"VBSP"
 
-GAMES = ["Day of Defeat: Source",
-         "G String",
-         "Garry's Mod",
-         "Half-Life 2: Episode 2",
-         "Half-Life 2 Update",
-         "NEOTOKYO",
-         "Portal",
-         "Team Fortress 2"]
+BSP_VERSION = 20  # NOTE: v20 Source BSPs differ widely, since many forks are of this version
+
+GAME_PATHS = ["Day of Defeat: Source",  # TODO: full paths
+              "G String",
+              "Garry's Mod",
+              "Half-Life 2: Episode 2",
+              "Half-Life 2 Update",
+              "NEOTOKYO",
+              "Portal",
+              "Team Fortress 2"]
+
+GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -89,6 +91,7 @@ class LUMP(enum.Enum):
     UNUSED_63 = 63
 
 
+# struct SourceBspHeader { char file_magic[4]; int version; SourceLumpHeader headers[64]; int revision; };
 lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
 
 
@@ -181,13 +184,13 @@ LUMP_CLASSES.update({"LEAVES": {1: Leaf}})
 
 SPECIAL_LUMP_CLASSES = source.SPECIAL_LUMP_CLASSES.copy()
 
+
+GAME_LUMP_HEADER = source.GAME_LUMP_HEADER
+
 # {"lump": {version: SpecialLumpClass}}
 GAME_LUMP_CLASSES = source.GAME_LUMP_CLASSES.copy()
-GAME_LUMP_CLASSES["sprp"].update({7: lambda raw_lump: shared.GameLump_SPRP(raw_lump, StaticPropv10),  # 7*
-                                 10: lambda raw_lump: shared.GameLump_SPRP(raw_lump, StaticPropv10)})
-
-
-# branch exclusive methods, in alphabetical order:
+GAME_LUMP_CLASSES["sprp"].update({7: lambda raw_lump: source.GameLump_SPRP(raw_lump, StaticPropv10),  # 7*
+                                 10: lambda raw_lump: source.GameLump_SPRP(raw_lump, StaticPropv10)})
 
 
 methods = [*source.methods]

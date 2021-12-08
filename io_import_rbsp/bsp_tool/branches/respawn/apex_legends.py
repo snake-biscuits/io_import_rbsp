@@ -4,16 +4,22 @@ from typing import List
 from .. import base
 from .. import shared
 from ..valve import source
-from . import titanfall, titanfall2
+from . import titanfall
+from . import titanfall2
 
+
+FILE_MAGIC = b"rBSP"
 
 BSP_VERSION = 47
 
-GAMES = ["Apex Legends"]
+GAME_PATHS = ["Apex Legends"]
+
 GAME_VERSIONS = {"Apex Legends": 47,
                  "Apex Legends: Season 7 - Ascension": 48,  # Olympus
                  "Apex Legends: Season 8 - Mayhem": 49,  # King's Canyon map update 3
-                 "Apex Legends: Season 10 - Emergence": 50}  # Arenas: Encore / SkyGarden
+                 "Apex Legends: Season 10 - Emergence": 50,  # Arenas: Encore / SkyGarden
+                 "Apex Legends: Season 11 - Escape": 65586}  # Nov19th patch version(50, 1) & all data in .bsp_lump
+# NOTE: ^ (maps in depot/ still contain many lumps in the .bsp, as before)
 
 
 class LUMP(enum.Enum):
@@ -146,6 +152,10 @@ class LUMP(enum.Enum):
     SHADOW_MESH_INDICES = 0x007E
     SHADOW_MESH_MESHES = 0x007F
 
+
+# struct RespawnBspHeader { char file_magic[4]; int version, revision, lump_count; SourceLumpHeader headers[128]; };
+lump_header_address = {LUMP_ID: (16 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
+
 # Known lump changes from Titanfall 2 -> Apex Legends:
 # New:
 #   UNUSED_15 -> SURFACE_NAMES
@@ -181,7 +191,7 @@ class LUMP(enum.Enum):
 #   CM_BRUSH_TEX_VECS
 #   TRICOLL_BEVEL_STARTS
 
-# Rough map of the relationships between lumps:
+# a rough map of the relationships between lumps:
 # Model -> Mesh -> MaterialSort -> TextureData -> SurfaceName
 #                             \--> VertexReservedX
 #                              \-> MeshIndex?
@@ -208,10 +218,7 @@ class LUMP(enum.Enum):
 # NOTE: there are also always as many vert refs as edge refs
 
 
-lump_header_address = {LUMP_ID: (16 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
-
-
-# # classes for lumps, in alphabetical order:
+# classes for lumps, in alphabetical order:
 # NOTE: LightmapHeader.count doesn't look like a count, quite off in general
 
 class MaterialSort(base.Struct):  # LUMP 82 (0052)
@@ -305,6 +312,7 @@ class VertexLitFlat(base.Struct):  # LUMP 72 (0048)
 
 
 class VertexUnlit(base.Struct):  # LUMP 71 (0047)
+    # NOTE: identical to VertexLitFlat?
     position_index: int  # index into Vertex lump
     normal_index: int  # index into VertexNormal lump
     uv: List[float]  # texture coordindates
@@ -333,6 +341,7 @@ def ApexSPRP(raw_lump):
 BASIC_LUMP_CLASSES = titanfall2.BASIC_LUMP_CLASSES.copy()
 
 LUMP_CLASSES = titanfall2.LUMP_CLASSES.copy()
+LUMP_CLASSES.pop("CM_GRID")
 LUMP_CLASSES.update({"LIGHTMAP_HEADERS":    {0: titanfall.LightmapHeader},
                      "MATERIAL_SORT":       {0: MaterialSort},
                      "MESHES":              {0: Mesh},
@@ -346,12 +355,13 @@ LUMP_CLASSES.update({"LIGHTMAP_HEADERS":    {0: titanfall.LightmapHeader},
                      "VERTEX_LIT_FLAT":     {0: VertexLitFlat},
                      "VERTEX_UNLIT":        {0: VertexUnlit},
                      "VERTEX_UNLIT_TS":     {0: VertexUnlitTS}})
-LUMP_CLASSES.pop("CM_GRID")
 
 SPECIAL_LUMP_CLASSES = titanfall2.SPECIAL_LUMP_CLASSES.copy()
 SPECIAL_LUMP_CLASSES.pop("TEXTURE_DATA_STRING_DATA")
 SPECIAL_LUMP_CLASSES.update({"SURFACE_NAMES": {0: shared.TextureDataStringData}})
 
+
+GAME_LUMP_HEADER = source.GameLumpHeader
 
 GAME_LUMP_CLASSES = {"sprp": {bsp_version: ApexSPRP for bsp_version in (47, 48, 49, 50)}}
 

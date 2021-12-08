@@ -1,16 +1,20 @@
 # https://wiki.zeroy.com/index.php?title=Call_of_Duty_1:_d3dbsp
-# NOTE: Call of Duty 1 has .bsp files in .pk3 archives
-# -- later games instead use .d3dbsp in .iwd archives
 import enum
 from typing import List
 
 from .. import base
-from .. import shared  # special lumps
+from .. import shared
+from ..id_software import quake
+# from ..id_software import quake3
 
+
+FILE_MAGIC = b"IBSP"
 
 BSP_VERSION = 59
 
-GAMES = ["Call of Duty"]
+GAME_PATHS = ["Call of Duty", "Call of Duty: United Offensive"]
+
+GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -22,14 +26,14 @@ class LUMP(enum.Enum):
     TRIANGLE_SOUPS = 6
     DRAW_VERTICES = 7
     DRAW_INDICES = 8
-    CULL_GROUPS = 9  # visibility
+    CULL_GROUPS = 9
     CULL_GROUP_INDICES = 10
-    PORTAL_VERTICES = 11  # areaportals; doors & windows
+    PORTAL_VERTICES = 11
     OCCLUDERS = 12
     OCCLUDER_PLANES = 13
     OCCLUDER_EDGES = 14
     OCCLUDER_INDICES = 15
-    AABB_TREES = 16  # Physics? or Vis Nodes?
+    AABB_TREES = 16
     CELLS = 17
     PORTALS = 18
     LIGHT_INDICES = 19
@@ -37,44 +41,47 @@ class LUMP(enum.Enum):
     LEAVES = 21
     LEAF_BRUSHES = 22
     LEAF_SURFACES = 23
-    PATCH_COLLISION = 24  # decal clipping? reference for painting bullet holes?
+    PATCH_COLLISION = 24
     COLLISION_VERTICES = 25
     COLLISION_INDICES = 26
     MODELS = 27
-    VISIBILITY = 28  # SPECIAL: Binary Partition tree (read bit by bit, with masks?)
-    LIGHTS = 29  # SPECIAL: string (typically ENTITIES would be #0)
+    VISIBILITY = 28
+    LIGHTS = 29
     ENTITIES = 30
     UNKNOWN_31 = 31  # FOGS ?
-    # big 32nd lump at ed of file, not in header?
-    # likely a zip / pakfile
-    # checking for file-magic would confirm this
+    # big "32nd lump" at end of file, not in header?
 
 
+# struct InfinityWardBspHeader { char file_magic[4]; int version; QuakeLumpHeader headers[32]; };
 lump_header_address = {LUMP_ID: (8 + i * 8) for i, LUMP_ID in enumerate(LUMP)}
 
 
 # classes for lumps, in alphabetical order:
-# all are incomplete guesses; only lump sizes are known
+# NOTE: all are incomplete guesses
 class AxisAlignedBoundingBox(base.Struct):  # LUMP 16
     """AABB tree"""
-    # too small to be mins & maxs of an AABB; probably indices (hence: AABB_TREE)
-    data: bytes
-    __slots__ = ["data"]
-    _format = "12s"  # size may be incorrect
+    # not floats. some kind of node indices?
+    unknown: List[int]
+    __slots__ = ["unknown"]
+    _format = "3I"
+    _arrays = {"unknown": 3}
 
 
-class Brush(base.Struct):  # LUMP 4
-    first_side: int  # index into the BrushSide lump
-    num_sides: int   # number of sides after first_side in this Brush
-    __slots__ = ["first_side", "num_sides"]
-    _format = "2i"
+class Brush(base.MappedArray):  # LUMP 6
+    # NOTE: first side is calculated via: sum([b.num_sides for b in bsp.BRUSHES[-i]]) - 1
+    num_sides: int
+    material_id: int  # Brush's overall contents flag?
+    _mapping = ["num_sides", "material_id"]
+    _format = "2H"
 
 
 class BrushSide(base.Struct):  # LUMP 3
     plane: int   # index into Plane lump
+    # NOTE: in some cases the plane index is a distance instead (float)
+    # "first 6 entries indicated by an entry in lump 6 [brushes] are distances (float), rest is plane ID's"
     shader: int  # index into Texture lump
     __slots__ = ["plane", "shader"]
-    _format = "2i"
+    _format = "2I"
 
 
 class Cell(base.Struct):  # LUMP 17
@@ -82,14 +89,6 @@ class Cell(base.Struct):  # LUMP 17
     data: bytes
     __slots__ = ["data"]
     _format = "52s"
-
-
-class CollisionVertex(base.MappedArray):  # LUMP 25
-    x: float
-    y: float
-    z: float
-    _mapping = [*"xyz"]
-    _format = "3f"
 
 
 class CullGroup(base.Struct):  # LUMP 9
@@ -145,14 +144,14 @@ class Model(base.Struct):  # LUMP 27
     num_brushes: int  # number of Brushes after first_brush included in this Model
     unknown: List[bytes]
     __slots__ = ["mins", "maxs", "first_face", "num_faces", "first_brush", "num_brushes", "unknown"]
-    _format = "6f4i4c4c"
+    _format = "6f6i"
     _arrays = {"mins": [*"xyz"], "maxs": [*"xyz"], "unknown": 2}
 
 
 class Node(base.Struct):  # LUMP 20
     data: bytes
     __slots__ = ["data"]
-    _format = "36c"
+    _format = "36s"
 
 
 class Occluder(base.Struct):  # LUMP 12
@@ -160,11 +159,13 @@ class Occluder(base.Struct):  # LUMP 12
     num_occluder_planes: int   # number of OccluderPlanes after first_occluder_plane in this Occluder
     first_occluder_edges: int  # index into the OccluderEdge lump
     num_occluder_edges: int    # number of OccluderEdges after first_occluder_edge in this Occluder
+    # first, num? isn't it usually the opposite? interesting
     __slots__ = ["first_occluder_plane", "num_occluder_planes", "first_occluder_edge", "num_occluder_edges"]
     _format = "4i"
 
 
 class PatchCollision(base.Struct):  # LUMP 24
+    """'Patches' are the CoD version of Source's Displacements (think of a fabric patch on torn clothes)"""
     data: bytes
     __slots__ = ["data"]
     _format = "16s"
@@ -185,50 +186,58 @@ class Portal(base.Struct):  # LUMP 18
 
 
 class Shader(base.Struct):  # LUMP 0
-    # assuming the same as Quake3 TEXTURE
+    """possibly based on Quake3 Texture LumpClass"""
     texture: str
-    flags: int
-    contents: int
-    __slots__ = ["texture", "flags", "contents"]
+    flags: List[int]
+    __slots__ = ["texture", "flags"]
     _format = "64s2i"
+    _arrays = {"flags": ["surface", "contents"]}
 
 
-class TriangleSoup(base.Struct):  # LUMP 5
-    data: bytes
-    __slots__ = ["data"]
-    _format = "16s"
+class TriangleSoup(base.MappedArray):  # LUMP 5
+    material: int
+    draw_order: int  # ?
+    first_vertex: int
+    num_vertices: int
+    first_triangle: int
+    num_triangles: int
+    _mapping = ["material", "draw_order", "first_vertex", "num_vertices",
+                "first_triangle", "num_triangles"]
+    _format = "2HI2HI"
 
 
-# {"LUMP_NAME": {version: LumpClass}}
+# {"LUMP_NAME": LumpClass}
 BASIC_LUMP_CLASSES = {"COLLISION_INDICES":  shared.UnsignedShorts,
                       "CULL_GROUP_INDICES": shared.UnsignedInts,
                       "DRAW_INDICES":       shared.UnsignedShorts,
                       "LEAF_BRUSHES":       shared.UnsignedInts,
                       "LEAF_SURFACES":      shared.UnsignedInts,
                       "LIGHT_INDICES":      shared.UnsignedShorts,
-                      "OCCLUDER_EDGES":     shared.UnsignedShorts,
                       "OCCLUDER_INDICES":   shared.UnsignedShorts,
                       "OCCLUDER_PLANES":    shared.UnsignedInts}
 
-LUMP_CLASSES = {"AABB_TREES":         AxisAlignedBoundingBox,
-                "BRUSHES":            Brush,
+LUMP_CLASSES = {
+                # "AABB_TREES":         AxisAlignedBoundingBox,
+                # "BRUSHES":            Brush,
                 "BRUSH_SIDES":        BrushSide,
-                "CELLS":              Cell,
-                "COLLISION_VERTICES": CollisionVertex,
-                "CULL_GROUPS":        CullGroup,
-                "DRAW_VERTICES":      DrawVertex,
+                # "CELLS":              Cell,
+                # "COLLISION_VERTICES": quake.Vertex,
+                # "CULL_GROUPS":        CullGroup,
+                # "DRAW_VERTICES":      DrawVertex,
                 "LEAVES":             Leaf,
-                "LIGHTS":             Light,
+                # "LIGHTS":             Light,
                 "LIGHTMAPS":          Lightmap,
-                "MODELS":             Model,
-                "NODES":              Node,
-                "OCCLUDERS":          Occluder,
-                "PATCH_COLLISION":    PatchCollision,
+                # "MODELS":             Model,
+                # "NODES":              Node,
+                # "OCCLUDERS":          Occluder,
+                "OCCLUDER_EDGES":     quake.Edge,
+                # "PATCH_COLLISION":    PatchCollision,
                 "PLANES":             Plane,
-                "PORTALS":            Portal,
+                # "PORTALS":            Portal,
                 "SHADERS":            Shader,
                 "TRIANGLE_SOUPS":     TriangleSoup}
 
 SPECIAL_LUMP_CLASSES = {"ENTITIES": shared.Entities}
 
-methods = []
+
+methods = [shared.worldspawn_volume]

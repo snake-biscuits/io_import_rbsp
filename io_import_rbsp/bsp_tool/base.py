@@ -6,11 +6,14 @@ import os
 import struct
 from types import MethodType, ModuleType
 from typing import Dict, List
+import warnings
 
 from . import lumps
 
 
-# NOTE: LumpHeaders must have these attrs, but how they are read / order will vary
+# TODO: align base.Bsp closer to Quake, rather than Source
+
+# NOTE: these LumpHeader defintions are not universal! many branches differ
 LumpHeader = collections.namedtuple("LumpHeader", ["offset", "length", "version", "fourCC"])
 ExternalLumpHeader = collections.namedtuple("ExternalLumpHeader", ["offset", "length", "version", "fourCC",
                                                                    "filename", "filesize"])
@@ -32,7 +35,7 @@ class Bsp:
     # ^ {"LUMP_NAME": Exception encountered}
 
     def __init__(self, branch: ModuleType, filename: str = "untitled.bsp", autoload: bool = True):
-        if not filename.endswith(".bsp"):
+        if not filename.lower().endswith(".bsp"):
             raise RuntimeError("Not a .bsp")
         filename = os.path.realpath(filename)
         self.folder, self.filename = os.path.split(filename)
@@ -42,8 +45,9 @@ class Bsp:
             if os.path.exists(filename):
                 self._preload()
             else:
-                print(f"{filename} not found, creating a new .bsp")
+                warnings.warn(UserWarning(f"{filename} not found, creating a new .bsp"))
                 self.headers = {L.name: LumpHeader(0, 0, 0, 0) for L in self.branch.LUMP}
+                # NOTE: ^ this doesn't acount for some branches' alternate LumpHeader structs
 
     def __enter__(self):
         return self
@@ -62,7 +66,7 @@ class Bsp:
         offset, length, version, fourCC = struct.unpack("4I", self.file.read(16))
         # TODO: use a read & write function / struct.iter_unpack
         # -- this could potentially allow for simplified subclasses
-        # -- e.g. LumpHeader(*struct.unpack("4I", self.file.read(16)))  ->  self.LumpHeader(self.file)
+        # -- e.g. LumpHeader(*struct.unpack("4I", self.file.read(16)))  ->  self.LumpHeader.from_file(self.file)
         header = LumpHeader(offset, length, version, fourCC)
         return header
 
@@ -74,8 +78,7 @@ class Bsp:
         # open .bsp
         self.file = open(os.path.join(self.folder, self.filename), "rb")
         file_magic = self.file.read(4)
-        if file_magic != self.file_magic:
-            raise RuntimeError(f"{self.file} is not a valid .bsp!")
+        assert file_magic == self.file_magic, f"{self.file} is not a valid .bsp!"
         self.bsp_version = int.from_bytes(self.file.read(4), "little")
         self.file.seek(0, 2)  # move cursor to end of file
         self.bsp_file_size = self.file.tell()
@@ -92,15 +95,15 @@ class Bsp:
             try:
                 if LUMP_NAME == "GAME_LUMP":
                     GameLumpClasses = getattr(self.branch, "GAME_LUMP_CLASSES", dict())
-                    BspLump = lumps.GameLump(self.file, lump_header, GameLumpClasses)
+                    BspLump = lumps.GameLump(self.file, lump_header, GameLumpClasses, self.branch.GAME_LUMP_HEADER)
                 elif LUMP_NAME in self.branch.LUMP_CLASSES:
                     LumpClass = self.branch.LUMP_CLASSES[LUMP_NAME][lump_header.version]
                     BspLump = lumps.create_BspLump(self.file, lump_header, LumpClass)
                 elif LUMP_NAME in self.branch.SPECIAL_LUMP_CLASSES:
                     SpecialLumpClass = self.branch.SPECIAL_LUMP_CLASSES[LUMP_NAME][lump_header.version]
-                    d_file, d_header = lumps.decompressed(self.file, lump_header)
-                    d_file.seek(d_header.offset)
-                    lump_data = d_file.read(d_header.length)
+                    decompressed_file, decompressed_header = lumps.decompressed(self.file, lump_header)
+                    decompressed_file.seek(decompressed_header.offset)
+                    lump_data = decompressed_file.read(decompressed_header.length)
                     BspLump = SpecialLumpClass(lump_data)
                 elif LUMP_NAME in self.branch.BASIC_LUMP_CLASSES:
                     LumpClass = self.branch.BASIC_LUMP_CLASSES[LUMP_NAME][lump_header.version]

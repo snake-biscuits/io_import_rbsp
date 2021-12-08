@@ -1,11 +1,11 @@
-__all__ = ["call_of_duty1"]
+"""Infinity Ward created the Call of Duty Franchise, built on the idTech3 (RTCW) engine.
+.bsp format shares IdTech's b'IBSP' FILE_MAGIC"""
+from . import call_of_duty1  # (.bsp in .pk3)
+from . import call_of_duty2  # (.d3dbsp in .iwd)
+from . import call_of_duty4  # (.d3dbsp in .ff)
+# TODO: blops3
 
-from . import call_of_duty1
-# TODO: CoD2 & 4
+# NOTE: I'm not buying any CoDs until Kotick is gone
 
-__doc__ = """Infinity Ward created the Call of Duty Franchise, built on the idTech3 (Q3A) engine."""
 
-# NOTE: Infinity Ward .bsps share Id Software's FILE_MAGIC
-FILE_MAGIC = b"IBSP"
-
-branches = [call_of_duty1]
+scripts = [call_of_duty1, call_of_duty2, call_of_duty4]

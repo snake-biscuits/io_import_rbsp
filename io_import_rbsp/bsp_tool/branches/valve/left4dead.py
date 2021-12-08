@@ -7,9 +7,13 @@ from . import orange_box
 from . import source
 
 
+FILE_MAGIC = b"VBSP"
+
 BSP_VERSION = 20
 
-GAMES = ["Left 4 Dead"]
+GAME_PATHS = ["Left 4 Dead"]
+
+GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -78,12 +82,15 @@ class LUMP(enum.Enum):
     UNUSED_62 = 62
     UNUSED_63 = 63
 
+
+# struct SourceBspHeader { char file_magic[4]; int version; SourceLumpHeader headers[64]; int revision; };
+lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
+
 # Known lump changes from Orange Box -> Left 4 Dead:
 # New:
 #   UNUSED_61 -> LUMP_OVERLAY_SYSTEM_LEVELS
 
 
-lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
 Left4Dead2LumpHeader = collections.namedtuple("Left4DeadLumpHeader", ["length", "offset", "version", "fourCC"])
 # length and offset are swapped for L4D2
 
@@ -111,9 +118,12 @@ LUMP_CLASSES.pop("WORLD_LIGHTS_HDR")
 
 SPECIAL_LUMP_CLASSES = orange_box.SPECIAL_LUMP_CLASSES.copy()
 
+GAME_LUMP_HEADER = orange_box.GAME_LUMP_HEADER
+
 # {"lump": {version: SpecialLumpClass}}
 GAME_LUMP_CLASSES = orange_box.GAME_LUMP_CLASSES.copy()
-# TODO: GAME_LUMP_CLASSES["sprp"].update({8: lambda raw_lump: shared.GameLump_SPRP(raw_lump, StaticPropv8)})
+GAME_LUMP_CLASSES["sprp"].pop(7)
+# TODO: GAME_LUMP_CLASSES["sprp"].update({8: lambda raw_lump: source.GameLump_SPRP(raw_lump, StaticPropv8)})
 
 
 # branch exclusive methods, in alphabetical order:

@@ -4,13 +4,17 @@ import collections
 import enum
 import struct
 
-from .. id_software import quake
+from ..id_software import quake
 from . import left4dead
 
 
+FILE_MAGIC = b"VBSP"
+
 BSP_VERSION = 21
 
-GAMES = ["Left 4 Dead 2"]
+GAME_PATHS = ["Left 4 Dead 2"]
+
+GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -76,8 +80,12 @@ class LUMP(enum.Enum):
     MAP_FLAGS = 59
     OVERLAY_FADES = 60
     LUMP_OVERLAY_SYSTEM_LEVELS = 61  # overlay CPU & GPU limits
-    LUMP_PHYSLEVEL = 62
+    LUMP_PHYSICS_LEVEL = 62
     UNUSED_63 = 63
+
+
+# struct SourceBspHeader { char file_magic[4]; int version; SourceLumpHeader headers[64]; int revision; };
+lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
 
 # Known lump changes from Left 4 Dead -> Left 4 Dead 2:
 # New:
@@ -86,10 +94,8 @@ class LUMP(enum.Enum):
 #   UNUSED_24 -> PROP_HULL_VERTS
 #   UNUSED_25 -> PROP_HULL_TRIS
 #   PHYSICS_COLLIDE_SURFACE -> PROP_BLOB
-#   UNUSED_62 -> LUMP_PHYSLEVEL
+#   UNUSED_62 -> LUMP_PHYSICS_LEVEL
 
-
-lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
 Left4Dead2LumpHeader = collections.namedtuple("Left4DeadLumpHeader", ["version", "offset", "length", "fourCC"])
 
 
@@ -101,26 +107,29 @@ def read_lump_header(file, LUMP: enum.Enum) -> Left4Dead2LumpHeader:
 
 
 # classes for lumps, in alphabetical order:
-# TODO: PropHull, PropHullTri
+# TODO: PropHull
+# TODO: PropHullTri
 
 
 # classes for special lumps, in alphabetical order:
-# TODO: PropCollision, PropBlob
+# TODO: PropCollision
+# TODO: PropBlob
+# TODO: StaticPropv8
 
 
 # {"LUMP_NAME": {version: LumpClass}}
 BASIC_LUMP_CLASSES = left4dead.BASIC_LUMP_CLASSES.copy()
 
 LUMP_CLASSES = left4dead.LUMP_CLASSES.copy()
-LUMP_CLASSES.update({"PROP_HULL_VERTS": quake.Vertex})
+LUMP_CLASSES.update({"PROP_HULL_VERTS": {0: quake.Vertex}})
 
 SPECIAL_LUMP_CLASSES = left4dead.SPECIAL_LUMP_CLASSES.copy()
 
+GAME_LUMP_HEADER = left4dead.GAME_LUMP_HEADER
+
 # {"lump": {version: SpecialLumpClass}}
 GAME_LUMP_CLASSES = left4dead.GAME_LUMP_CLASSES.copy()
-# TODO: GAME_LUMP_CLASSES["sprp"].update({8: lambda raw_lump: shared.GameLump_SPRP(raw_lump, StaticPropv8)})
+# TODO: GAME_LUMP_CLASSES["sprp"].update({8: lambda raw_lump: source.GameLump_SPRP(raw_lump, StaticPropv8)})
 
-
-# branch exclusive methods, in alphabetical order:
 
 methods = [*left4dead.methods]

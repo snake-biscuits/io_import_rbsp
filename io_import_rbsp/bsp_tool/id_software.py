@@ -13,7 +13,7 @@ IdTechLumpHeader = collections.namedtuple("IdTechLumpHeader", ["offset", "length
 
 
 class QuakeBsp(base.Bsp):  # Quake 1 only?
-    # NOTE: QuakeBsp has no file_magic?
+    file_magic = None
 
     def __init__(self, branch: ModuleType, filename: str = "untitled.bsp", autoload: bool = True):
         super(QuakeBsp, self).__init__(branch, filename, autoload)
@@ -79,8 +79,7 @@ class IdTechBsp(base.Bsp):
         # open .bsp
         self.file = open(os.path.join(self.folder, self.filename), "rb")
         file_magic = self.file.read(4)
-        if file_magic != self.file_magic:
-            raise RuntimeError(f"{self.file} is not a valid .bsp!")
+        assert file_magic == self.file_magic, f"{self.file} is not a valid .bsp!"
         self.bsp_version = int.from_bytes(self.file.read(4), "little")
         self.file.seek(0, 2)  # move cursor to end of file
         self.bsp_file_size = self.file.tell()
@@ -113,7 +112,7 @@ class IdTechBsp(base.Bsp):
                 BspLump = lumps.create_RawBspLump(self.file, lump_header)
             setattr(self, LUMP_name, BspLump)
 
-    def _read_header(self, LUMP: enum.Enum) -> (IdTechLumpHeader, bytes):
+    def _read_header(self, LUMP: enum.Enum) -> IdTechLumpHeader:
         self.file.seek(self.branch.lump_header_address[LUMP])
         offset, length = struct.unpack("2i", self.file.read(8))
         header = IdTechLumpHeader(offset, length)

@@ -2,15 +2,22 @@
 import enum
 import struct
 
-from ..valve import orange_box, source
+from ..valve import orange_box
+from ..valve import source
 
 
-BSP_VERSION = 20
-# NOTE: BSP_VERSION is stored as 2 shorts?
+FILE_MAGIC = b"VBSP"
 
-GAMES = ["Dark Messiah of Might and Magic"]
+BSP_VERSION = (20, 4)  # int.from_bytes(struct.pack("2H", 20, 4), "little")
+
+GAME_PATHS = ["Dark Messiah of Might and Magic Multi-Player"]
+
+GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
+
 
 LUMP = orange_box.LUMP
+
+# struct DarkMessiahBspHeader { char file_magic[4]; short version[2]; SourceLumpHeader headers[64]; int revision;};
 lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
 
 
@@ -20,10 +27,7 @@ def read_lump_header(file, LUMP: enum.Enum) -> source.SourceLumpHeader:
     header = source.SourceLumpHeader(offset, length, version, fourCC)
     return header
 
-# classes for lumps, in alphabetical order:
-# TODO: dheader_t, texinfo_t, dgamelump_t, dmodel_t
 
-# classes for special lumps, in alphabetical order:
 # TODO: StaticPropLumpv6
 
 
@@ -31,10 +35,14 @@ def read_lump_header(file, LUMP: enum.Enum) -> source.SourceLumpHeader:
 BASIC_LUMP_CLASSES = orange_box.BASIC_LUMP_CLASSES.copy()
 
 LUMP_CLASSES = orange_box.LUMP_CLASSES.copy()
+LUMP_CLASSES.pop("WORLD_LIGHTS")  # sdk_2013?
+LUMP_CLASSES.pop("WORLD_LIGHTS_HDR")
 
 SPECIAL_LUMP_CLASSES = orange_box.SPECIAL_LUMP_CLASSES.copy()
 
-# GAME_LUMP_CLASSES = {"sprp": {6: lambda raw_lump: shared.GameLump_SPRP(raw_lump, StaticPropLumpv6)}}
+GAME_LUMP_HEADER = orange_box.GAME_LUMP_HEADER
+
+GAME_LUMP_CLASSES = {"sprp": {6: lambda raw_lump: source.GameLump_SPRP(raw_lump, None)}}
 
 
 methods = [*orange_box.methods]

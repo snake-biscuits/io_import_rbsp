@@ -3,21 +3,28 @@
 # https://valvedev.info/tools/bsptwomap/
 import enum
 
-from ..id_software import quake  # GoldSrc was forked from IdTech 2 during Quake II development
+from ..id_software import quake
+# NOTE: GoldSrc was forked from IdTech 2 during Quake II development
+# -- so some elements of both quake & quake2 formats are present
+
+
+FILE_MAGIC = None
 
 BSP_VERSION = 30
 
-GAMES = [*[f"Half-Life/{mod}" for mod in [
-                       "cstrike",   # Counter-Strike
-                       "czero",     # Counter-Strike: Condition Zero
-                       "czeror",    # Counter-Strike: Condition Zero - Deleted Scenes
-                       "dmc",       # Deathmatch Classic
-                       "dod",       # Day of Defeat
-                       "gearbox",   # Half-Life: Opposing Force
-                       "ricochet",  # Ricochet
-                       "tfc",       # Team Fortress Classic
-                       "valve"]],   # Half-Life
-         "Halfquake Trilogy", "Sven Co-op"]
+GAME_PATHS = [*[f"Half-Life/{mod}" for mod in [
+                            "cstrike",   # Counter-Strike
+                            "czero",     # Counter-Strike: Condition Zero
+                            "czeror",    # Counter-Strike: Condition Zero - Deleted Scenes
+                            "dmc",       # Deathmatch Classic
+                            "dod",       # Day of Defeat
+                            "gearbox",   # Half-Life: Opposing Force
+                            "ricochet",  # Ricochet
+                            "tfc",       # Team Fortress Classic
+                            "valve"]],   # Half-Life
+              "Halfquake Trilogy", "Sven Co-op"]
+
+GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -34,6 +41,7 @@ class LUMP(enum.Enum):
     LEAVES = 10
     MARK_SURFACES = 11
     EDGES = 12
+    SURFEDGES = 13
     MODELS = 14
 
 # Known lump changes from Quake II -> GoldSrc:
@@ -41,6 +49,7 @@ class LUMP(enum.Enum):
 #   MARK_SURFACES
 
 
+# struct QuakeBspHeader { int version; QuakeLumpHeader headers[15]; };
 lump_header_address = {LUMP_ID: (4 + i * 8) for i, LUMP_ID in enumerate(LUMP)}
 
 
@@ -92,8 +101,9 @@ class Contents(enum.IntFlag):  # src/public/bspflags.h
     TRANSLUCENT = -15
 
 
-# classes for lumps, in alphabetical order::
-# TODO: Model, Node
+# classes for lumps, in alphabetical order:
+# TODO: Model
+# TODO: Node
 
 # classes for special lumps, in alphabetical order:
 # TODO: make a special LumpCLass for MipTextures
@@ -108,8 +118,6 @@ LUMP_CLASSES.pop("MODELS")
 LUMP_CLASSES.pop("NODES")
 
 SPECIAL_LUMP_CLASSES = quake.SPECIAL_LUMP_CLASSES.copy()
-SPECIAL_LUMP_CLASSES.pop("MIP_TEXTURES")
 
 
-# branch exclusive methods, in alphabetical order:
 methods = [*quake.methods]

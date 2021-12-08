@@ -8,9 +8,13 @@ from .. import base
 from .. import shared  # special lumps
 
 
+FILE_MAGIC = None
+
 BSP_VERSION = 29
 
-GAMES = ["Quake"]
+GAME_PATHS = ["Quake", "Team Fortress Quake"]
+
+GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
 
 
 # lump names & indices:
@@ -31,21 +35,22 @@ class LUMP(enum.Enum):
     SURFEDGES = 13  # indices into EDGES (-ve indices reverse edge direction)
     MODELS = 14
 
-# A rough map of the relationships between lumps:
-#                                      /-> LEAF_BRUSHES
-# ENTITIES -> MODELS -> NODES -> LEAVES -> LEAF_FACES -> FACES
-#                   \-> CLIP_NODES -> PLANES
 
-# FACES -> SURFEDGES -> EDGES -> VERTICES
-#      |-> TEXTURE_INFO -> MIP_TEXTURES
-#      |-> LIGHTMAPS
-#      \-> PLANES
-
-
+# struct QuakeBspHeader { int version; QuakeLumpHeader headers[15]; };
 lump_header_address = {LUMP_ID: (4 + i * 8) for i, LUMP_ID in enumerate(LUMP)}
 
 
-# engine limits:
+# A rough map of the relationships between lumps:
+# ENTITIES -> MODELS -> NODES -> LEAVES -> LEAF_FACES -> FACES
+#                   \-> CLIP_NODES -> PLANES
+
+#      /-> TEXTURE_INFO -> MIP_TEXTURES
+# FACES -> SURFEDGES -> EDGES -> VERTICES
+#     \--> LIGHTMAPS
+#      \-> PLANES
+
+
+# Engine limits:
 class MAX(enum.Enum):
     ENTITIES = 1024
     PLANES = 32767
@@ -191,7 +196,7 @@ class Node(base.Struct):  # LUMP 5
     # NOTE: bounds are generous, rounding up to the nearest 16 units
     first_face: int
     num_faces: int
-    _format = "I8h"
+    _format = "I10h"
     _arrays = {"children": ["front", "back"],
                "bounds": {"mins": [*"xyz"], "maxs": [*"xyz"]}}
 
@@ -206,13 +211,13 @@ class Plane(base.Struct):  # LUMP 1
 
 
 class TextureInfo(base.Struct):  # LUMP 6
-    U: List[float]
-    V: List[float]
+    u: List[float]
+    v: List[float]
     mip_texture_index: int
     animated: int  # 0 or 1
-    __slots__ = ["U", "V", "mip_texture_index", "animated"]
+    __slots__ = ["u", "v", "mip_texture_index", "animated"]
     _format = "8f2I"
-    _arrays = {"U": [*"xyzw"], "V": [*"xyzw"]}
+    _arrays = {"u": [*"xyzw"], "v": [*"xyzw"]}
 
 
 class Vertex(base.MappedArray):  # LUMP 3
@@ -264,8 +269,8 @@ LUMP_CLASSES = {"CLIP_NODES":   ClipNode,
                 "TEXTURE_INFO": TextureInfo,
                 "VERTICES":     Vertex}
 
-SPECIAL_LUMP_CLASSES = {"ENTITIES":     shared.Entities,
-                        "MIP_TEXTURES": MipTextureLump}
+SPECIAL_LUMP_CLASSES = {"ENTITIES":     shared.Entities}
+# TODO: "MIP_TEXTURES": MipTextureLump
 
 
 # branch exclusive methods, in alphabetical order:

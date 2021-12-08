@@ -1,5 +1,7 @@
 import collections
 import enum
+import io
+import itertools
 import struct
 from typing import List
 
@@ -9,13 +11,16 @@ from .. import vector
 from ..id_software import quake
 
 
+FILE_MAGIC = b"VBSP"
+
 BSP_VERSION = 19  # & 20
 
-GAMES = ["Counter-Strike: Source",  # counter-strike source/cstrike
-         "Half-Life 1: Source - Deathmatch",  # Half-Life 1 Source Deathmatch/hl1mp
-         "Half-Life 2",  # Half-Life 2/hl2
-         "Half-Life 2: Episode 1"]  # Half-Life 2/episodic
-GAME_VERSIONS = {game: BSP_VERSION for game in GAMES}
+GAME_PATHS = ["counter-strike source/cstrike",  # Counter-Strike: Source
+              "Half-Life 1 Source Deathmatch/hl1mp",  # Half-Life 1: Source - Deathmatch
+              "Half-Life 2/hl2",  # Half-Life 2
+              "Half-Life 2/episodic"]  # Half-Life 2: Episode 1
+
+GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -85,7 +90,9 @@ class LUMP(enum.Enum):
     UNUSED_63 = 63
 
 
+# struct SourceBspHeader { char file_magic[4]; int version; SourceLumpHeader headers[64]; int revision; };
 lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
+
 SourceLumpHeader = collections.namedtuple("SourceLumpHeader", ["offset", "length", "version", "fourCC"])
 
 
@@ -273,6 +280,21 @@ class DispTris(enum.IntFlag):
     BUILDABLE = 0x04
     SURFPROP1 = 0x08  # ?
     SURFPROP2 = 0x10  # ?
+
+
+class SPRP_flags(enum.IntFlag):
+    FADES = 0x1  # use fade distances
+    USE_LIGHTING_ORIGIN = 0x2
+    NO_DRAW = 0x4    # computed at run time based on dx level
+    # the following are set in a level editor:
+    IGNORE_NORMALS = 0x8
+    NO_SHADOW = 0x10
+    SCREEN_SPACE_FADE = 0x20
+    # next 3 are for lighting compiler
+    NO_PER_VERTEX_LIGHTING = 0x40
+    NO_SELF_SHADOWING = 0x80
+    NO_PER_TEXEL_LIGHTING = 0x100
+    EDITOR_MASK = 0x1D8
 
 
 class Surface(enum.IntFlag):  # src/public/bspflags.h
@@ -504,12 +526,55 @@ class WorldLight(base.Struct):  # LUMP 15
     _arrays = {"origin": [*"xyz"], "intensity": [*"xyz"], "normal": [*"xyz"]}
 
 
-# classes for special lumps, in alphabetical order:
+# special lump classes, in alphabetical order:
+class GameLumpHeader(base.MappedArray):
+    id: str
+    flags: int
+    version: int
+    offset: int
+    length: int
+    _mapping = ["id", "flags", "version", "offset", "length"]
+    _format = "4s2H2i"
+
+
+class GameLump_SPRP:
+    def __init__(self, raw_sprp_lump: bytes, StaticPropClass: object):
+        """Get StaticPropClass from GameLump version"""
+        # lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropvXX)
+        sprp_lump = io.BytesIO(raw_sprp_lump)
+        model_name_count = int.from_bytes(sprp_lump.read(4), "little")
+        model_names = struct.iter_unpack("128s", sprp_lump.read(128 * model_name_count))
+        setattr(self, "model_names", [t[0].replace(b"\0", b"").decode() for t in model_names])
+        leaf_count = int.from_bytes(sprp_lump.read(4), "little")
+        leaves = itertools.chain(*struct.iter_unpack("H", sprp_lump.read(2 * leaf_count)))
+        setattr(self, "leaves", list(leaves))
+        prop_count = int.from_bytes(sprp_lump.read(4), "little")
+        # TODO: if StaticPropClass is None: split into appropriate groups of bytes
+        read_size = struct.calcsize(StaticPropClass._format) * prop_count
+        props = struct.iter_unpack(StaticPropClass._format, sprp_lump.read(read_size))
+        setattr(self, "props", list(map(StaticPropClass.from_tuple, props)))
+        here = sprp_lump.tell()
+        end = sprp_lump.seek(0, 2)
+        assert here == end, "Had some leftover bytes, bad format"
+
+    def as_bytes(self) -> bytes:
+        if len(self.props) > 0:
+            prop_format = self.props[0]._format
+        else:
+            prop_format = ""
+        return b"".join([int.to_bytes(len(self.model_names), 4, "little"),
+                         *[struct.pack("128s", n) for n in self.model_names],
+                         int.to_bytes(len(self.leaves), 4, "little"),
+                         *[struct.pack("H", L) for L in self.leaves],
+                         int.to_bytes(len(self.props), 4, "little"),
+                         *[struct.pack(prop_format, *p.flat()) for p in self.props]])
+
+
 class StaticPropv4(base.Struct):  # sprp GAME LUMP (LUMP 35)
     """https://github.com/ValveSoftware/source-sdk-2013/blob/master/sp/src/public/gamebspfile.h#L151"""
     origin: List[float]  # origin.xyz
     angles: List[float]  # origin.yzx  QAngle; Z0 = East
-    name_index: int  # index into AME_LUMP.sprp.model_names
+    name_index: int  # index into GAME_LUMP.sprp.model_names
     first_leaf: int  # index into Leaf lump
     num_leafs: int  # number of Leafs after first_leaf this StaticPropv10 is in
     solid_mode: int  # collision flags enum
@@ -524,11 +589,11 @@ class StaticPropv4(base.Struct):  # sprp GAME LUMP (LUMP 35)
                "lighting_origin": [*"xyz"]}
 
 
-class StaticPropv5(base.Struct):  # sprp GAME LUMP (LUMP 35)
+class StaticPropv5(base.Struct):  # sprp GAME LUMP (LUMP 35) [version 5]
     """https://github.com/ValveSoftware/source-sdk-2013/blob/master/sp/src/public/gamebspfile.h#L168"""
     origin: List[float]  # origin.xyz
     angles: List[float]  # origin.yzx  QAngle; Z0 = East
-    name_index: int  # index into AME_LUMP.sprp.model_names
+    name_index: int  # index into GAME_LUMP.sprp.model_names
     first_leaf: int  # index into Leaf lump
     num_leafs: int  # number of Leafs after first_leaf this StaticPropv10 is in
     solid_mode: int  # collision flags enum
@@ -538,35 +603,38 @@ class StaticPropv5(base.Struct):  # sprp GAME LUMP (LUMP 35)
     lighting_origin: List[float]  # xyz position to sample lighting from
     forced_fade_scale: float  # relative to pixels used to render on-screen?
     __slots__ = ["origin", "angles", "name_index", "first_leaf", "num_leafs",
-                 "solid_mode", "skin", "fade_distance", "lighting_origin",
+                 "solid_mode", "flags", "skin", "fade_distance", "lighting_origin",
                  "forced_fade_scale"]
-    _format = "6f3HBi6f2Hi2H"
+    _format = "6f3H2Bi6f"
     _arrays = {"origin": [*"xyz"], "angles": [*"yzx"], "fade_distance": ["min", "max"],
                "lighting_origin": [*"xyz"]}
 
 
-class StaticPropv6(base.Struct):  # sprp GAME LUMP (LUMP 35)
+class StaticPropv6(base.Struct):  # sprp GAME LUMP (LUMP 35) [version 6]
+    """https://github.com/ValveSoftware/source-sdk-2013/blob/master/sp/src/public/gamebspfile.h#L186"""
     origin: List[float]  # origin.xyz
     angles: List[float]  # origin.yzx  QAngle; Z0 = East
-    name_index: int  # index into AME_LUMP.sprp.model_names
+    name_index: int  # index into GAME_LUMP.sprp.model_names
     first_leaf: int  # index into Leaf lump
     num_leafs: int  # number of Leafs after first_leaf this StaticPropv10 is in
     solid_mode: int  # collision flags enum
+    flags: int  # other flags
     skin: int  # index of this StaticProp's skin in the .mdl
     fade_distance: List[float]  # min & max distances to fade out
     lighting_origin: List[float]  # xyz position to sample lighting from
     forced_fade_scale: float  # relative to pixels used to render on-screen?
     dx_level: List[int]  # supported directX level, will not render depending on settings
     __slots__ = ["origin", "angles", "name_index", "first_leaf", "num_leafs",
-                 "solid_mode", "skin", "fade_distance", "lighting_origin",
+                 "solid_mode", "flags", "skin", "fade_distance", "lighting_origin",
                  "forced_fade_scale", "dx_level"]
-    _format = "6f3HBi6f2Hi2H"
+    _format = "6f3H2Bi6f2H"
     _arrays = {"origin": [*"xyz"], "angles": [*"yzx"], "fade_distance": ["min", "max"],
                "lighting_origin": [*"xyz"], "dx_level": ["min", "max"]}
 
 
 # {"LUMP_NAME": {version: LumpClass}}
 BASIC_LUMP_CLASSES = {"DISPLACEMENT_TRIS":         {0: shared.UnsignedShorts},
+                      "LEAF_BRUSHES":              {0: shared.UnsignedShorts},
                       "LEAF_FACES":                {0: shared.UnsignedShorts},
                       "SURFEDGES":                 {0: shared.Ints},
                       "TEXTURE_DATA_STRING_TABLE": {0: shared.UnsignedShorts}}
@@ -596,14 +664,15 @@ LUMP_CLASSES = {"AREAS":                 {0: Area},
 SPECIAL_LUMP_CLASSES = {"ENTITIES":                 {0: shared.Entities},
                         "TEXTURE_DATA_STRING_DATA": {0: shared.TextureDataStringData},
                         "PAKFILE":                  {0: shared.PakFile},
-                        "PHYSICS_COLLIDE":          {0: shared.PhysicsCollide}
-                        }
+                        "PHYSICS_COLLIDE":          {0: shared.physics.CollideLump}}
+
+
+GAME_LUMP_HEADER = GameLumpHeader
 
 # {"lump": {version: SpecialLumpClass}}
-GAME_LUMP_CLASSES = {"sprp": {4: lambda raw_lump: shared.GameLump_SPRP(raw_lump, StaticPropv4),
-                              5: lambda raw_lump: shared.GameLump_SPRP(raw_lump, StaticPropv5),
-                              6: lambda raw_lump: shared.GameLump_SPRP(raw_lump, StaticPropv6)}}
-# NOTE: having some errors with CS:S
+GAME_LUMP_CLASSES = {"sprp": {4: lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropv4),
+                              5: lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropv5),
+                              6: lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropv6)}}
 
 
 # branch exclusive methods, in alphabetical order:
@@ -776,7 +845,7 @@ def vertices_of_displacement(bsp, face_index: int) -> List[List[float]]:
     return vertices
 
 
-# TODO: vertices_of_model: walk the node tree
+# TODO: vertices_of_model (walk the node tree)
 # TODO: vertices_of_node
 
 methods = [vertices_of_face, vertices_of_displacement, shared.worldspawn_volume]

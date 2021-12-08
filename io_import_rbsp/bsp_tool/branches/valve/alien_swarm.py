@@ -6,9 +6,13 @@ from . import orange_box
 from . import source
 
 
+FILE_MAGIC = b"VBSP"
+
 BSP_VERSION = 21
 
-GAMES = ["Alien Swarm", "Alien Swarm Reactive Drop"]
+GAME_PATHS = ["Alien Swarm", "Alien Swarm Reactive Drop"]
+
+GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -77,14 +81,15 @@ class LUMP(enum.Enum):
     UNUSED_62 = 62
     DISPLACEMENT_MULTIBLEND = 63
 
+
+# struct SourceBspHeader { char file_magic[4]; int version; SourceLumpHeader headers[64]; int revision; };
+lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
+
 # Known lump changes from Orange Box -> Alien Swarm:
 # New:
 #   UNUSED_63 -> DISPLACEMENT_MULTIBLEND
 # Deprecated:
 #   ???
-
-
-lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
 
 
 def read_lump_header(file, LUMP: enum.Enum) -> source.SourceLumpHeader:
@@ -108,7 +113,9 @@ LUMP_CLASSES.pop("WORLD_LIGHTS_HDR")
 
 SPECIAL_LUMP_CLASSES = orange_box.SPECIAL_LUMP_CLASSES.copy()
 
+GAME_LUMP_HEADER = orange_box.GAME_LUMP_HEADER
+
 GAME_LUMP_CLASSES = orange_box.GAME_LUMP_CLASSES.copy()
 
-# branch exclusive methods, in alphabetical order:
+
 methods = [*orange_box.methods]

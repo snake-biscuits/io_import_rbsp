@@ -1,4 +1,5 @@
 # https://www.mralligator.com/q3/
+# https://github.com/zturtleman/spearmint/blob/master/code/qcommon/bsp_q3.c
 import enum
 from typing import List
 import struct
@@ -7,9 +8,17 @@ from .. import base
 from .. import shared
 
 
+FILE_MAGIC = b"IBSP"
+
 BSP_VERSION = 46
 
-GAMES = ["Quake 3 Arena", "Quake Live"]
+GAME_PATHS = ["Quake 3 Arena", "Quake Live", "Return to Castle Wolfenstein",
+              "Wolfenstein Enemy Territory", "Dark Salvation"]  # https://mangledeyestudios.itch.io/dark-salvation
+
+GAME_VERSIONS = {"Quake 3 Arena": 46, "Quake Live": 46,
+                 "Return to Castle Wolfenstein": 47,
+                 "Wolfenstein Enemy Territory": 47,
+                 "Dark Salvation": 666}
 
 
 class LUMP(enum.Enum):
@@ -32,15 +41,26 @@ class LUMP(enum.Enum):
     VISIBILITY = 16
 
 
-# a rough map of the relationships between lumps
-# Model -> Brush -> BrushSide
-#      |        |-> Texture
-#      |-> Face -> MeshVertex
-#              |-> Texture
-#              |-> Vertex
-
-
+# struct Quake3BspHeader { char file_magic[4]; int version; QuakeLumpHeader headers[17]; };
 lump_header_address = {LUMP_ID: (8 + i * 8) for i, LUMP_ID in enumerate(LUMP)}
+
+# a rough map of the relationships between lumps:
+#
+#               /-> Texture
+# Model -> Brush -> BrushSide
+#      \-> Face -> MeshVertex
+#             \--> Texture
+#              \-> Vertex
+
+
+# flag enums
+class SurfaceType(enum.Enum):
+    BAD = 0
+    PLANAR = 1
+    PATCH = 2  # displacement-like
+    TRIANGLE_SOUP = 3  # mesh (dynamic LoD?)
+    FLARE = 4  # billboard sprite?
+    FOLIAGE = 5
 
 
 # classes for lumps, in alphabetical order:
@@ -70,7 +90,7 @@ class Effect(base.Struct):  # LUMP 12
 class Face(base.Struct):  # LUMP 13
     texture: int  # index into Texture lump
     effect: int  # index into Effect lump; -1 for no effect
-    type: int  # polygon, patch, mesh, billboard (env_sprite)
+    surface_type: int  # see SurfaceType enum
     first_vertex: int  # index into Vertex lump
     num_vertices: int  # number of Vertices after first_vertex in this face
     first_mesh_vertex: int  # index into MeshVertex lump
@@ -81,13 +101,13 @@ class Face(base.Struct):  # LUMP 13
     # lightmap.origin: List[float]  # world space lightmap origin
     # lightmap.vector: List[List[float]]  # lightmap texture projection vectors
     normal: List[float]
-    size: List[float]  # texture patch dimensions
-    __slots__ = ["texture", "effect", "type", "first_vertex", "num_vertices",
+    patch: List[float]  # for patches (displacement-like)
+    __slots__ = ["texture", "effect", "surface_type", "first_vertex", "num_vertices",
                  "first_mesh_vertex", "num_mesh_vertices", "lightmap", "normal", "size"]
     _format = "12i12f2i"
     _arrays = {"lightmap": {"index": None, "top_left": [*"xy"], "size": ["width", "height"],
                             "origin": [*"xyz"], "vector": {"s": [*"xyz"], "t": [*"xyz"]}},
-               "normal": [*"xyz"], "size": ["width", "height"]}
+               "normal": [*"xyz"], "patch": ["width", "height"]}
 
 
 class Leaf(base.Struct):  # LUMP 4
@@ -97,7 +117,10 @@ class Leaf(base.Struct):  # LUMP 4
     maxs: List[float]
     first_leaf_face: int  # index into LeafFace lump
     num_leaf_faces: int  # number of LeafFaces in this Leaf
-    __slots__ = ["cluster", "area", "mins", "maxs", "first_leaf_face", "num_leaf_faces"]
+    first_leaf_brush: int  # index into LeafBrush lump
+    num_leaf_brushes: int  # number of LeafBrushes in this Leaf
+    __slots__ = ["cluster", "area", "mins", "maxs", "first_leaf_face",
+                 "num_leaf_faces", "first_leaf_brush", "num_leaf_brushes"]
     _format = "12i"
     _arrays = {"mins": [*"xyz"], "maxs": [*"xyz"]}
 
@@ -120,7 +143,7 @@ class Lightmap(list):  # LUMP 14
 
 
 class LightVolume(base.Struct):  # LUMP 15
-    # LightVolumess make up a 3D grid whose dimensions are:
+    # LightVolumes make up a 3D grid whose dimensions are:
     # x = floor(MODELS[0].maxs.x / 64) - ceil(MODELS[0].mins.x / 64) + 1
     # y = floor(MODELS[0].maxs.y / 64) - ceil(MODELS[0].mins.y / 64) + 1
     # z = floor(MODELS[0].maxs.z / 128) - ceil(MODELS[0].mins.z / 128) + 1
@@ -159,10 +182,10 @@ class Plane(base.Struct):  # LUMP 2
 
 class Texture(base.Struct):  # LUMP 1
     name: str  # 64 char texture name; stored in WAD (Where's All the Data)?
-    flags: int  # rendering bit flags?
-    contents: int  # SOLID, AIR etc.
-    __slots__ = ["name", "flags", "contents"]
+    flags: List[int]
+    __slots__ = ["name", "flags"]
     _format = "64s2i"
+    _arrays = {"flags": ["surface", "contents"]}
 
 
 class Vertex(base.Struct):  # LUMP 10
@@ -174,11 +197,11 @@ class Vertex(base.Struct):  # LUMP 10
     __slots__ = ["position", "uv", "normal", "colour"]
     _format = "10f4B"
     _arrays = {"position": [*"xyz"], "uv": {"texture": [*"uv"], "lightmap": [*"uv"]},
-               "normal": [*"xyz"]}
+               "normal": [*"xyz"], "colour": [*"rgba"]}
 
 
 # special lump classes, in alphabetical order:
-class Visibility:
+class Visibility:  # same as Quake / QuakeII?
     """Cluster X is visible from Cluster Y if:
     bit (1 << Y % 8) of vecs[X * vector_size + Y // 8] is set
     NOTE: Clusters are associated with Leaves"""
@@ -208,7 +231,7 @@ LUMP_CLASSES = {"BRUSHES":       Brush,
                 "TEXTURES":      Texture,
                 "VERTICES":      Vertex}
 
-SPECIAL_LUMP_CLASSES = {"ENTITIES": shared.Entities,
+SPECIAL_LUMP_CLASSES = {"ENTITIES":   shared.Entities,
                         "VISIBILITY": Visibility}
 
 

@@ -10,9 +10,12 @@ from ..id_software import quake
 from ..valve import source
 
 
+FILE_MAGIC = b"rBSP"
+
 BSP_VERSION = 29
 
-GAMES = ["Titanfall", "Titanfall: Online"]
+GAME_PATHS = ["Titanfall", "Titanfall: Online"]
+
 GAME_VERSIONS = {"Titanfall": 29, "Titanfall: Online": 29}
 
 
@@ -79,7 +82,7 @@ class LUMP(enum.Enum):
     UNUSED_59 = 0x003B
     UNUSED_60 = 0x003C
     UNUSED_61 = 0x003D
-    PHYSICS_LEVEL = 0x003E
+    PHYSICS_LEVEL = 0x003E  # from L4D2 / INFRA ?
     UNUSED_63 = 0x003F
     UNUSED_64 = 0x0040
     UNUSED_65 = 0x0041
@@ -146,18 +149,18 @@ class LUMP(enum.Enum):
     SHADOW_MESH_INDICES = 0x007E
     SHADOW_MESH_MESHES = 0x007F
 
+
+# struct RespawnBspHeader { char file_magic[4]; int version, revision, lump_count; SourceLumpHeader headers[128]; };
+lump_header_address = {LUMP_ID: (16 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
+
 # Rough map of the relationships between lumps:
 
 #              /-> MaterialSort -> TextureData -> TextureDataStringTable -> TextureDataStringData
-# Model -> Mesh -> MeshIndices -\-> VertexReservedX -> Vertex
-#              \-> .flags (VertexReservedX)       \--> VertexNormal
-#                                                  \-> .uv
+# Model -> Mesh -> MeshIndex -\-> VertexReservedX -> Vertex
+#              \-> .flags (VertexReservedX)     \--> VertexNormal
+#                                                \-> .uv
 
 # MeshBounds & Mesh are indexed in paralell?
-#
-# TextureData -> TextureDataStringTable -> TextureDataStringTable
-# VertexReservedX -> Vertex
-#                \-> VertexNormal
 #
 # LeafWaterData -> TextureData -> water material
 # NOTE: LeafWaterData is also used in calculating VPhysics / PHYSICS_COLLIDE
@@ -184,24 +187,21 @@ class LUMP(enum.Enum):
 # (? * ? + ?) * 4 -> GridCell
 
 
-lump_header_address = {LUMP_ID: (16 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
-
-
 # flag enums
 class Flags(enum.IntFlag):
-    # source.Surface (source.TextureInfo / titanfall.TextureData ?)
+    # source.Surface (source.TextureInfo rolled into titanfall.TextureData ?)
     SKY_2D = 0x0002  # TODO: test overriding sky with this in-game
     SKY = 0x0004
-    WARP = 0x0008  # water surface?
-    TRANSLUCENT = 0x0010  # VERTEX_UNLIT_TS ?
+    WARP = 0x0008  # Quake water surface?
+    TRANSLUCENT = 0x0010  # decals & atmo?
     # titanfall.Mesh.flags
     VERTEX_LIT_FLAT = 0x000     # VERTEX_RESERVED_1
     VERTEX_LIT_BUMP = 0x200     # VERTEX_RESERVED_2
     VERTEX_UNLIT = 0x400        # VERTEX_RESERVED_0
     VERTEX_UNLIT_TS = 0x600     # VERTEX_RESERVED_3
     # VERTEX_BLINN_PHONG = 0x???  # VERTEX_RESERVED_4
-    # guesses
-    TRIGGER = 0x40000
+    SKIP = 0x20000  # 0x200 in valve.source.Surface (<< 8?)
+    TRIGGER = 0x40000  # guessing
     # masks
     MASK_VERTEX = 0x600
 
@@ -289,18 +289,18 @@ class MaterialSort(base.MappedArray):  # LUMP 82 (0052)
 
 
 class Mesh(base.Struct):  # LUMP 80 (0050)
-    first_mesh_index: int  # index into this Mesh's VertexReservedX
-    num_triangles: int  # number of triangles in VertexReservedX after first_mesh_index
-    start_vertices: int  # index to this Mesh's first VertexReservedX
+    first_mesh_index: int  # index into MeshIndices
+    num_triangles: int  # number of triangles in MeshIndices after first_mesh_index
+    first_vertex: int  # index to this Mesh's first VertexReservedX
     num_vertices: int
     unknown: List[int]
     # for mp_box.VERTEX_LIT_BUMP: (2, -256, -1,  ?,  ?,  ?)
     # for mp_box.VERTEX_UNLIT:    (0,   -1, -1, -1, -1, -1)
     material_sort: int  # index of this Mesh's MaterialSort
     flags: int  # Flags(mesh.flags & Flags.MASK_VERTEX).name == "VERTEX_RESERVED_X"
-    __slots__ = ["first_mesh_index", "num_triangles", "start_vertices",
+    __slots__ = ["first_mesh_index", "num_triangles", "first_vertex",
                  "num_vertices", "unknown", "material_sort", "flags"]
-    _format = "IH8hHI"  # 28 Bytes
+    _format = "I3H6hHI"  # 28 Bytes
     _arrays = {"unknown": 6}
 
 
@@ -438,7 +438,7 @@ class TextureData(base.Struct):  # LUMP 2 (0002)
 
 class TextureVector(base.Struct):  # LUMP 95 (005F)
     __slots__ = ["s", "t"]
-    __format = "8f"
+    _format = "8f"
     _arrays = {"s": [*"xyzw"], "t": [*"xyzw"]}
 
 
@@ -534,9 +534,10 @@ class GameLump_SPRP:
         setattr(self, "leaves", leaves)
         prop_count, unknown_1, unknown_2 = struct.unpack("3i", sprp_lump.read(12))
         self.unknown_1, self.unknown_2 = unknown_1, unknown_2
-        prop_size = struct.calcsize(StaticPropClass._format)
-        props = struct.iter_unpack(StaticPropClass._format, sprp_lump.read(prop_count * prop_size))
-        setattr(self, "props", list(map(StaticPropClass, props)))
+        # TODO: if StaticPropClass is None: split into appropriate groups of bytes
+        read_size = struct.calcsize(StaticPropClass._format) * prop_count
+        props = struct.iter_unpack(StaticPropClass._format, sprp_lump.read(read_size))
+        setattr(self, "props", list(map(StaticPropClass.from_tuple, props)))
 
     def as_bytes(self) -> bytes:
         return b"".join([len(self.model_names).to_bytes(4, "little"),
@@ -566,9 +567,9 @@ BASIC_LUMP_CLASSES = {"CM_BRUSH_SIDE_PLANE_OFFSETS": {0: shared.UnsignedShorts},
 
 LUMP_CLASSES = {"CELLS":                             {0: Cell},
                 "CELL_AABB_NODES":                   {0: Node},
-                # "CELL_BSP_NODES":                  {0: Node},
+                # "CELL_BSP_NODES":                    {0: Node},
                 "CM_BRUSHES":                        {0: Brush},
-                # "CM_BRUSH_TEX_VECS":               {0: TextureVector},
+                "CM_BRUSH_TEX_VECS":                 {0: TextureVector},
                 "CM_GEO_SET_BOUNDS":                 {0: Bounds},
                 "CM_GRID":                           {0: Grid},
                 "CM_PRIMITIVE_BOUNDS":               {0: Bounds},
@@ -607,8 +608,10 @@ SPECIAL_LUMP_CLASSES = {"ENTITY_PARTITIONS":         {0: EntityPartitions},
                         "ENTITIES":                  {0: shared.Entities},
                         # NOTE: .ent files are handled directly by the RespawnBsp class
                         "PAKFILE":                   {0: shared.PakFile},
-                        "PHYSICS_COLLIDE":           {0: shared.PhysicsCollide},
+                        "PHYSICS_COLLIDE":           {0: shared.physics.CollideLump},
                         "TEXTURE_DATA_STRING_DATA":  {0: shared.TextureDataStringData}}
+
+GAME_LUMP_HEADER = source.GameLumpHeader
 
 GAME_LUMP_CLASSES = {"sprp": {12: lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropv12)}}
 
