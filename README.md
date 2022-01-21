@@ -43,6 +43,17 @@ Once you've extracted the files you need:
 <!-- Cry when it breaks and send me an e-mail to fix it -->
 <!-- Materials & Models will require paths set in Preferences & SourceIO -->
 
+### Legion Assets
+**TITANFALL 2 & APEX LEGENDS ONLY! (EXPERIMENTAL)**
+- Titanfall: `.vpk` Materials & Models
+- Titanfall 2: `.rpak` Materials; `.vpk` Models
+- Apex: `.rpak` Materials & Models
+ * [Legion Workflow](https://drive.google.com/file/d/1ApByE0p5MzVV95dUsQ0seciCA7Cl5WFZ/view)
+ * Requires:
+   - [.cast](https://github.com/dtzxporter/cast)
+   - [.mprt](https://github.com/llennoco22/Apex-mprt-importer-for-Blender)
+
+
 
 ## Related Tools
 

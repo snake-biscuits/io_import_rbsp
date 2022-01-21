@@ -95,10 +95,11 @@ def all_entities(bsp, master_collection: bpy.types.Collection):
             entity_object = bpy.data.objects.new(name, object_data)
             if object_data is None:
                 entity_object.empty_display_type = "SPHERE"
-                entity_object.empty_display_size = 64
+                entity_object.empty_display_size = 16
                 # cubes for ai pathing entities
                 if entity["classname"].startswith("info_node"):
                     entity_object.empty_display_type = "CUBE"
+                    entity_object.empty_display_size = 32
             entity_collection.objects.link(entity_object)
             # location
             position = [*map(float, entity.get("origin", "0 0 0").split())]

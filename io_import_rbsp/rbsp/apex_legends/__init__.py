@@ -8,6 +8,7 @@ from ..titanfall import entities, props
 # NOTE: titanfall brush entities differ significantly from r1 & 2
 # -- "*coll0" "???????????"
 from . import materials
+# TODO: props (need to use io_import_semodel + Legion)
 
 
 def geometry(bsp, master_collection: bpy.types.Collection, materials: List[bpy.types.Material]):

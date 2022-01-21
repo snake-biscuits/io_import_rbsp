@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.2_b2.93 (8th December 2021)
+
+### Updates
+ * Models & Textures via [Legion](https://wiki.modme.co/wiki/apps/Legion.html) **(experimental)**; requires:
+   - [.cast](https://github.com/dtzxporter/cast)
+   - [.mprt](https://github.com/llennoco22/Apex-mprt-importer-for-Blender)
+
+> Faster methods (as part of io_import_rbsp) are planned, this was just easier to implement
+
+
 ## v1.2.1_b2.93 (8th December 2021)
 
 ### Updates

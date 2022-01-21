@@ -1,5 +1,13 @@
+import os
+
+import addon_utils
 import bpy
 import mathutils
+
+
+# TODO: break down model paths as collections
+# foliage > ...
+# auto-hide large collections (> 1000 props)
 
 
 def as_empties(bsp, master_collection: bpy.types.Collection):
@@ -16,11 +24,20 @@ def as_empties(bsp, master_collection: bpy.types.Collection):
         prop_collection.objects.link(prop_object)
 
 
-def as_models(bsp, master_collection: bpy.types.Collection):
+def all_models(bsp, master_collection: bpy.types.Collection):
+    # NOTE: runs post entities, so we should mutate the existing empties (if loaded...)
     raise NotImplementedError()
-    # model_dir = os.path.join(game_dir, "models")
-    # TODO: hook into SourceIO to import .mdl files
-    # TODO: make a collection for static props
+    static_props(bsp, master_collection)  # <- creates prop collection
+    # TODO: non-static prop entities:
+    # -- prop_control_panel
+    # -- prop_dynamic
+    # -- prop_physics
+    # -- prop_exfil_panel
+    # -- prop_refuel_pump
+    # -- prop_bigbrother_panel
+    # ENTITIES_script "classname" .match("prop_\w+")
+    # ENTITIES_script only?
+
     # try:
     #     bpy.ops.source_io.mdl(filepath=model_dir, files=[{"name": "error.mdl"}])
     # except Exception as exc:
@@ -31,3 +48,25 @@ def as_models(bsp, master_collection: bpy.types.Collection):
     # now find it..., each model creates a collection...
     # this is gonna be real memory intensive...
     # TODO: instance each prop at listed location & rotation etc. (preserve object data)
+
+
+def static_props(bsp, master_collection: bpy.types.Collection):
+    """https://github.com/llennoco22/Apex-mprt-importer-for-Blender/blob/main/ApexMapImporter/panel_op.py"""
+    dependencies = {"SourceIO": "https://github.com/REDxEYE/SourceIO/releases"}
+    addons = [m.__name__ for m in addon_utils.modules()]
+    for addon_name in dependencies:
+        assert addon_name in addons, f"Install {addon_name} from {dependencies[addon_name]}"
+    models_folder = bpy.context.scene.rbsp_prefs.models_folder
+    if not os.path.isdir(models_folder):
+        raise FileNotFoundError(f"Models path ({models_folder}) is not a folder")
+    for model_name in bsp.GAME_LUMP.model_names:
+        bpy.ops.source_io.mdl(filepath=models_folder, files=[{"name": model_name}])
+        # NOTE: SourceIO makes collections for each model (use instanced collections?)
+        # NOTE: import scale?
+        # Collection: body; model(s): body_dmx/{prop_name}_LOD0.dmx (may not match!)
+        # but if we delete the bodygroup collections we can always match it's contents
+        ...
+        # TODO: move collection to a base collection
+    for prop in bsp.GAME_LUMP.props:
+        # TODO: instance and place
+        ...

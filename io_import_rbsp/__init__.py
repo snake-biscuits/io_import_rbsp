@@ -5,13 +5,14 @@ from bpy.types import Operator
 
 from . import bsp_tool
 from . import rbsp
+from . import preferences
 
 
 bl_info = {
     "name": "io_import_rbsp",
     "author": "Jared Ketterer (snake-biscuits / Bikkie)",
-    "version": (1, 2, 1),
-    "blender": (3, 0, 0),
+    "version": (1, 3, 0),
+    "blender": (2, 93, 6),
     "location": "File > Import > Titanfall Engine .bsp",
     "description": "Import maps from Titanfall, Titanfall 2 & Apex Legends",
     "doc_url": "https://github.com/snake-biscuits/io_import_rbsp",
@@ -27,21 +28,27 @@ class ImportRBSP(Operator, ImportHelper):
     filter_glob: StringProperty(default="*.bsp", options={"HIDDEN"}, maxlen=255)  # noqa F722
     # TODO: load_materials EnumProperty: None, Names, Base Colours, Nodes
     load_geometry: BoolProperty(name="Geometry", description="Load .bsp Geometry", default=True)  # noqa F722
+    # TODO: load_lighting EnumProperty: None, Empties, All, PortalLights
     load_entities: BoolProperty(name="Entities", description="Load .bsp Entities", default=True)  # noqa F722
     load_brushes: EnumProperty(name="Brushes", description="Generate brush geometry",  # noqa F722
                                items=(("None", "No Brushes", "Empties at brush entity origins"),  # noqa F722
                                       ("Brushes", "Generate Brushes", "Generate brushes from planes stored in the entity")),  # noqa F722
                                default="Brushes")  # noqa F722
-    # TODO: cubemap volumes?
-    # TODO: load_lighting EnumProperty: None, Empties, All, PortalLights
     # TODO: load_prop_dynamic EnumProperty: None, Empties, Low-Poly, High-Poly
     # TODO: load_prop_static EnumProperty: None, Empties, Low-Poly, High-Poly, Skybox Only
+    load_props: EnumProperty(name="Props", description="Load smaller models",  # noqa F722
+                             items=(("None", "No Props", "Decent performance"),  # noqa F722
+                                    ("Empties", "Use Empties", "Place empties at prop origins"),  # noqa F722
+                                    ("Instances", "Instanced Collections", "Full props & materials; Very slow")),  # noqa F722
+                             default="None")  # noqa F722
+    # TODO: cubemap volumes?
     # TODO: Lock out some options if SourceIO is not installed, alert the user
     # TODO: Warnings for missing files
-    # TODO: Lightmaps with Pillow (PIL)
+    # TODO: Lightmaps (export to file(s) and append to materials (would require splitting materials up more))
 
     def execute(self, context):
         """Import selected .bsp"""
+        # TODO: loading % indicators
         bsp = bsp_tool.load_bsp(self.filepath)
         import_script = {bsp_tool.branches.respawn.titanfall: rbsp.titanfall,
                          bsp_tool.branches.respawn.titanfall2: rbsp.titanfall2,
@@ -55,6 +62,8 @@ class ImportRBSP(Operator, ImportHelper):
             master_collection = bpy.data.collections[bsp.filename]
         # materials
         materials = importer.materials.base_colours(bsp)
+        # if bsp.branch == bsp_tool.branches.respawn.titanfall2:  # HACK
+        #     materials = importer.materials.textured(bsp)
         # geometry
         if self.load_geometry:
             # TODO: rename Model[0] "worldspawn"
@@ -83,7 +92,12 @@ class ImportRBSP(Operator, ImportHelper):
             # NOTE: includes lights, square info_node* & speakers
             # NOTE: Eevee has limited lighting, try Cycles
         # props
-        # TODO: import scale (Engine Units -> Inches)
+        if self.load_props == "Empties":
+            importer.props.as_empties(bsp, master_collection)
+        elif self.load_props == "Instances":
+            importer.props.static_props(bsp, master_collection)
+        # TODO: scale the whole import (Engine Units -> Inches)
+        # TODO: override default view / camera (near, far) clipping -> (16, 102400)
         return {"FINISHED"}
 
 
@@ -93,12 +107,14 @@ def menu_func_import(self, context):
 
 
 def register():
+    preferences.register()
     bpy.utils.register_submodule_factory(__name__, ("bsp_tool", "rbsp"))
     bpy.utils.register_class(ImportRBSP)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
 
 
 def unregister():
+    preferences.unregister()
     bpy.utils.unregister_class(ImportRBSP)
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
 

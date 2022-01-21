@@ -14,3 +14,6 @@ def base_colours(bsp) -> List[bpy.types.Material]:
             material.blend_method = "BLEND"
         materials.append(material)
     return materials
+
+
+# TODO: SourceIO .vmt & .vtf bulk import

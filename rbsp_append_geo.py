@@ -1,9 +1,12 @@
-import bpy
 import importlib
 import itertools
+import sys
 from typing import List
 
-from ... import bsp_tool
+import bpy
+
+sys.path.insert(0, "C:/Users/Jared/Documents/GitHub/bsp_tool")
+import bsp_tool  # noqa E402
 
 
 importlib.reload(bsp_tool)
@@ -26,6 +29,7 @@ bsp = bsp_tool.load_bsp(TITANFALL_ONLINE + "mp_box.bsp")
 #                                                  \-> .uv
 
 obj = bpy.context.selected_objects[0]
+# ENTITIES:
 entity = dict(classname="func_brush",
               model=f"*{len(bsp.MODELS)}",
               targetname="orange_tower",
@@ -45,9 +49,10 @@ xs = {P[0] for P in bound_points}
 ys = {P[1] for P in bound_points}
 zs = {P[2] for P in bound_points}
 # TODO: MESH_BOUNDS (mins, flags_1?, maxs, flags_2?)
-model = titanfall.Model((min(xs), min(ys), min(zs),
-                         max(xs), max(ys), max(zs),
-                         len(bsp.MESHES), len(bpy.context.selected_objects)))
+model = titanfall.Model(mins=(min(xs), min(ys), min(zs)),
+                        maxs=(max(xs), max(ys), max(zs)),
+                        first_mesh=len(bsp.MESHES),
+                        num_meshes=len(bpy.context.selected_objects))
 bsp.MODELS.append(model)
 
 for obj in bpy.context.selected_objects:
@@ -55,22 +60,23 @@ for obj in bpy.context.selected_objects:
     bsp.TEXTURE_DATA_STRING_TABLE.append(len(bsp.TEXTURE_DATA_STRING_DATA.as_bytes()))
     bsp.TEXTURE_DATA_STRING_DATA.append(texture_name)
 
-    texture_data = titanfall.TextureData((*obj.material_slots[0].material.diffuse_color[:3],
-                                          len(bsp.TEXTURE_DATA_STRING_DATA) - 1,
-                                          *[128, 128], *[128, 128],
-                                          titanfall.Flags.VERTEX_UNLIT))
+    texture_data = titanfall.TextureData(reflectivity=obj.material_slots[0].material.diffuse_color[:3],
+                                         name_index=len(bsp.TEXTURE_DATA_STRING_DATA) - 1,
+                                         size=(128, 128), view=(128, 128),
+                                         flags=titanfall.Flags.VERTEX_UNLIT)
     bsp.TEXTURE_DATA.append(texture_data)
 
-    material_sort = titanfall.MaterialSort((len(bsp.TEXTURE_DATA) - 1, 0, -1, 0, 0))
+    material_sort = titanfall.MaterialSort(len(bsp.TEXTURE_DATA) - 1, 0, -1, 0, 0)
     bsp.MATERIAL_SORT.append(material_sort)
-    # NOTE: expecting one mesh per material, but we could split it ourselves
+    # NOTE: expecting one mesh per material
+    # -- could automate mesh splitting, but just do it manually for now
 
     # NOTE: not checking bsp.VERTICES for reusable positions
     raw_vertices = [tuple(v.co) for v in obj.data.vertices]
     vertices = list(set(raw_vertices))
     remapped_vertices = {i: vertices.index(v) + len(bsp.VERTICES) for i, v in enumerate(raw_vertices)}
     Vertex = titanfall.LUMP_CLASSES["VERTICES"][0]
-    bsp.VERTICES.extend([Vertex(v) for v in vertices])
+    bsp.VERTICES.extend([Vertex(*v) for v in vertices])
     del raw_vertices, vertices, Vertex
 
     # NOTE: not checking bsp.VERTEX_NORMALS for reusable normals
@@ -78,7 +84,7 @@ for obj in bpy.context.selected_objects:
     normals = list(set(raw_normals))
     remapped_normals = {i: normals.index(n) + len(bsp.VERTEX_NORMALS) for i, n in enumerate(raw_normals)}
     VertexNormal = titanfall.LUMP_CLASSES["VERTEX_NORMALS"][0]
-    bsp.VERTEX_NORMALS.extend([VertexNormal(n) for n in normals])
+    bsp.VERTEX_NORMALS.extend([VertexNormal(*n) for n in normals])
     del raw_normals, normals, VertexNormal
 
     special_vertices: List[titanfall.VertexReservedX] = list()
@@ -100,18 +106,21 @@ for obj in bpy.context.selected_objects:
             else:
                 mesh_indices.append(special_vertices.index(vertex))
 
-    mesh = titanfall.Mesh((len(bsp.MESH_INDICES), len(mesh_indices) // 3,  # first_mesh_index, num_triangles
-                           len(bsp.VERTEX_UNLIT), len(special_vertices),  # first_vertex, num_vertices
-                           0, -1, -1, -1, -1, -1,  # unknown
-                           len(bsp.MATERIAL_SORT) - 1, titanfall.Flags.VERTEX_UNLIT))  # material_sort, flags
+    mesh = titanfall.Mesh(first_mesh_index=len(bsp.MESH_INDICES),
+                          num_triangles=len(mesh_indices) // 3,
+                          first_vertex=len(bsp.VERTEX_UNLIT),
+                          num_vertices=len(special_vertices),
+                          unknown=(0, -1, -1, -1, -1, -1),
+                          material_sort=len(bsp.MATERIAL_SORT) - 1,
+                          flags=titanfall.Flags.VERTEX_UNLIT)
     bsp.MESHES.append(mesh)
 
     bsp.MESH_INDICES.extend(mesh_indices)
 
-    # bsp.VERTEX_LIT_BUMP.extend([r1.VertexLitBump((*v, -1, 0.0, 0.0, 0, 0, 2, 9)) for v in special_vertices])
+    # bsp.VERTEX_LIT_BUMP.extend([r1.VertexLitBump(*v, -1, (0.0, 0.0), (0, 0, 2, 9)) for v in special_vertices])
     # NOTE: crunching all uv2 to 1 point could be bad,
     # -- unknown=(0, 0, 2, 9) is mp_box.VERTEX_LIT_BUMP[0].unknown
-    bsp.VERTEX_UNLIT.extend([titanfall.VertexUnlit((*v, -1)) for v in special_vertices])
+    bsp.VERTEX_UNLIT.extend([titanfall.VertexUnlit(*v, -1) for v in special_vertices])
 
 
 bsp.save_as("E:/Mod/TitanfallOnline/TitanFallOnline/Data/r1/maps/mp_box.bsp")

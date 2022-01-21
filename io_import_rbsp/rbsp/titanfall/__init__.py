@@ -56,6 +56,10 @@ def geometry(bsp, master_collection: bpy.types.Collection, materials: List[bpy.t
             blender_mesh.materials.append(materials[texture_data.name_index])
             blender_mesh.update()
             blender_object = bpy.data.objects.new(blender_mesh.name, blender_mesh)
+            # TODO: use smooth shading (bpy.ops.object.shade_smooth() ? needs selection)
+            blender_object.data.use_auto_smooth()
+            # TODO: add to a sub-collection depending on TextureData/Mesh.flags
+            # -- SKYBOX / TRANSLUCENT (decal patches & atmospheric effects)
             model_collection.objects.link(blender_object)
         if len(model_collection.objects) == 0:
             bpy.data.collections.remove(model_collection)
