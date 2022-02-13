@@ -99,7 +99,7 @@ for obj in bpy.context.selected_objects:
             position_index = remapped_vertices[vertex_index]
             normal_index = remapped_normals[vertex_index]
             uv = tuple(obj.data.uv_layers.active.data[i].uv)
-            vertex = (position_index, normal_index, *uv)
+            vertex = (position_index, normal_index, uv)
             if vertex not in special_vertices:
                 mesh_indices.append(len(special_vertices))
                 special_vertices.append(vertex)
