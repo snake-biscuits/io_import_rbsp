@@ -6,14 +6,18 @@ import struct
 
 from .. import base
 from .. import shared
+from .. id_software import quake
 
 
 FILE_MAGIC = b"IBSP"
 
 BSP_VERSION = 46
 
-GAME_PATHS = ["Quake 3 Arena", "Quake Live", "Return to Castle Wolfenstein",
-              "Wolfenstein Enemy Territory", "Dark Salvation"]  # https://mangledeyestudios.itch.io/dark-salvation
+GAME_PATHS = {"Quake 3 Arena": "Quake 3 Arena",
+              "Quake Live": "Quake Live",
+              "Return to Castle Wolfenstein": "realRTCW",  # steam release
+              "Wolfenstein: Enemy Territory": "Wolfenstein - Enemy Territory",
+              "Dark Salvation": "Dark Salvation"}  # https://mangledeyestudios.itch.io/dark-salvation
 
 GAME_VERSIONS = {"Quake 3 Arena": 46, "Quake Live": 46,
                  "Return to Castle Wolfenstein": 47,
@@ -41,8 +45,7 @@ class LUMP(enum.Enum):
     VISIBILITY = 16
 
 
-# struct Quake3BspHeader { char file_magic[4]; int version; QuakeLumpHeader headers[17]; };
-lump_header_address = {LUMP_ID: (8 + i * 8) for i, LUMP_ID in enumerate(LUMP)}
+LumpHeader = quake.LumpHeader
 
 # a rough map of the relationships between lumps:
 #
@@ -54,6 +57,33 @@ lump_header_address = {LUMP_ID: (8 + i * 8) for i, LUMP_ID in enumerate(LUMP)}
 
 
 # flag enums
+class Contents(enum.IntEnum):
+    """https://github.com/xonotic/darkplaces/blob/master/bspfile.h"""
+    SOLID = 0x00000001  # opaque & transparent
+    LAVA = 0x00000008
+    SLIME = 0x00000010
+    WATER = 0x00000020
+    FOG = 0x00000040  # possibly unused
+    AREA_PORTAL = 0x00008000
+    PLAYER_CLIP = 0x00010000
+    MONSTER_CLIP = 0x00020000
+    # bot hints
+    TELEPORTER = 0x00040000
+    JUMP_PAD = 0x00080000
+    CLUSTER_PORTAL = 0x00100000
+    DO_NOT_ENTER = 0x00200000
+    BOTCLIP = 0x00400000
+    # end bot hints
+    ORIGIN = 0x01000000  # removed during compile
+    BODY = 0x02000000  # bound box collision only; never bsp
+    CORPSE = 0x04000000
+    DETAIL = 0x08000000
+    STRUCTURAL = 0x10000000  # vis splitting brushes
+    TRANSLUCENT = 0x20000000
+    TRIGGER = 0x40000000
+    NO_DROP = 0x80000000  # deletes drops
+
+
 class SurfaceType(enum.Enum):
     BAD = 0
     PLANAR = 1
@@ -127,10 +157,8 @@ class Leaf(base.Struct):  # LUMP 4
 
 class Lightmap(list):  # LUMP 14
     """Raw pixel bytes, 128x128 RGB_888 image"""
+    _pixels: List[bytes] = [b"\0" * 3] * 128 * 128
     _format = "3s" * 128 * 128  # 128x128 RGB_888
-
-    def __init__(self, _tuple):
-        self._pixels: List[bytes] = _tuple  # RGB_888
 
     def __getitem__(self, row) -> List[bytes]:  # returns 3 bytes: b"\xRR\xGG\xBB"
         # Lightmap[row][column] returns self.__getitem__(row)[column]
@@ -140,6 +168,12 @@ class Lightmap(list):  # LUMP 14
 
     def flat(self) -> bytes:
         return b"".join(self._pixels)
+
+    @classmethod
+    def from_tuple(cls, _tuple):
+        out = cls()
+        out._pixels = _tuple  # RGB_888
+        return out
 
 
 class LightVolume(base.Struct):  # LUMP 15

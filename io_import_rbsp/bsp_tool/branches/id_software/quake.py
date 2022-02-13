@@ -12,9 +12,9 @@ FILE_MAGIC = None
 
 BSP_VERSION = 29
 
-GAME_PATHS = ["Quake", "Team Fortress Quake"]
+GAME_PATHS = {"Quake": "Quake", "Team Fortress Quake": "QUAKE/FORTRESS"}
 
-GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
+GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
 
 # lump names & indices:
@@ -36,8 +36,9 @@ class LUMP(enum.Enum):
     MODELS = 14
 
 
-# struct QuakeBspHeader { int version; QuakeLumpHeader headers[15]; };
-lump_header_address = {LUMP_ID: (4 + i * 8) for i, LUMP_ID in enumerate(LUMP)}
+class LumpHeader(base.MappedArray):
+    _mapping = ["offset", "length"]
+    _format = "2I"
 
 
 # A rough map of the relationships between lumps:

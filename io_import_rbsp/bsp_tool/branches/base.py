@@ -1,5 +1,6 @@
 """Base classes for defining .bsp lump structs"""
 from __future__ import annotations
+import io
 import re
 import struct
 from typing import Any, Dict, Iterable, List, Union
@@ -13,6 +14,10 @@ from typing import Any, Dict, Iterable, List, Union
 # ^ {"attr": SubClass, "attr2.sub": SubClass}
 # child_MappedArray = ...; SubClass.__init__(child_MappedArray)
 # allows for nesting vector.Vec3 in Structs
+# would need to be reversable into bytes in a standardised way; struct.pack(_format, *subclass_instance) ?
+# TODO: bitfields (split & rejoin)
+# TODO: {int: Mapping} mappings (list of MappedArray)
+# -- e.g. {"triangle": {3: Vertex}}
 
 class Struct:
     """base class for tuple <-> class conversion
@@ -25,12 +30,13 @@ class Struct:
     # each value in _arrays is a mapping to generate a MappedArray from
     # TODO: _child_subclasses: dict[str, Any]
     # e.g. {"plane.normal": vector.Vec3}
+    # source.DisplacementInfo desperately needs this
 
     def __init__(self, *args, **kwargs):
         # LumpClass(attr1, [attr2_1, attr2_2])
         # LumpClass(attr1, attr2=[attr2_1, attr2_2])
         # NOTE: can only set top-level value, no partial init of nested attr via kwargs (yet)
-        # UNLESS: LumpClass(attr3=MappedArray(attr3_x=value, _mapping=LumpClass._arrays["attr3"])
+        # UNLESS: LumpClass(attr3=MappedArray(x=value, _mapping=LumpClass._arrays["attr3"])
         # BETTER: LumpClass(attr3_x=value)  # parse kwarg as attr3.x & generate attr3 MappedArray (expensive!)
         # BEST: LumpClass(**{"attr3.x": value})  # no chance of overlapping attr names
         assert len(args) <= len(self.__slots__), "Too many arguments! Should match top level attributes!"
@@ -65,6 +71,22 @@ class Struct:
                 start = mapping_length(parsed)
                 length = mapping_length({None: self._arrays.get(attr)})
                 child_format = "".join(types[start:start + length])
+                if isinstance(mapping, dict):
+                    if all([isinstance(k, int) for k in mapping]) and [*mapping] == [*range(max(mapping) + 1)]:
+                        setattr(self, attr, list())
+                        sub_start = start
+                        sub_start_0 = 0
+                        for index in mapping:
+                            sub_mapping = mapping[index]
+                            sub_length = mapping_length({None: sub_mapping})
+                            sub_format = "".join(types[sub_start:sub_start + sub_length])
+                            sub_end = sub_start_0 + sub_length
+                            getattr(self, attr)[index] = MappedArray.from_tuple(value[sub_start_0:sub_end],
+                                                                                _format=sub_format,
+                                                                                _mapping=sub_mapping)
+                            sub_start += sub_length
+                            sub_start_0 += sub_length
+                        continue
                 setattr(self, attr, MappedArray.from_tuple(value, _format=child_format, _mapping=mapping))
             else:
                 raise RuntimeError(f"{self.__class__.__name__} has bad _arrays!")
@@ -109,12 +131,15 @@ class Struct:
     # convertors
     @classmethod
     def from_bytes(cls, _bytes: bytes) -> Struct:
-        assert len(_bytes) == struct.calcsize(cls.format)
+        assert len(_bytes) == struct.calcsize(cls._format)
         _tuple = struct.unpack(cls._format, _bytes)
         expected_length = len(cls.__slots__) + mapping_length(cls._arrays) - len(cls._arrays)
         assert len(_tuple) == expected_length
-        # TODO: ^ test
         return cls.from_tuple(_tuple)
+
+    @classmethod
+    def from_stream(cls, stream: io.BytesIO) -> Struct:
+        return cls.from_bytes(stream.read(struct.calcsize(cls._format)))
 
     @classmethod
     def from_tuple(cls, _tuple: Iterable) -> Struct:
@@ -126,11 +151,10 @@ class Struct:
             if attr not in cls._arrays:
                 value = _tuple[_tuple_index]
                 length = 1
-            else:
-                # partition up children
+            else:  # partition up children
                 child_mapping = cls._arrays[attr]
                 if isinstance(child_mapping, (list, dict)):  # child_mapping: List[str]
-                    length = len(child_mapping) if isinstance(child_mapping, list) else mapping_length(child_mapping)
+                    length = mapping_length({None: child_mapping})
                     array = _tuple[_tuple_index:_tuple_index + length]
                     child_format = "".join(types[_tuple_index:_tuple_index + length])
                     value = MappedArray.from_tuple(array, _mapping=child_mapping, _format=child_format)
@@ -212,6 +236,7 @@ class MappedArray:
             if isinstance(value, MappedArray):
                 assert isinstance(child_mapping, (list, dict)), f"Invalid child_mapping for {attr}: {child_mapping}"
                 assert value._mapping == child_mapping  # depth doesn't match?
+                # TODO: if attr is an integer, we're making a list of MappedArrays
                 setattr(self, attr, value)
             elif isinstance(child_mapping, int):
                 assert len(value) == child_mapping
@@ -263,7 +288,7 @@ class MappedArray:
         types = split_format(_format)
         assert mapping_length(_mapping) == len(types), "Invalid mapping for format!"
         global type_defaults
-        # TODO: allow defautlt strings (requires a type_defaults function (see below))
+        # TODO: allow default strings (requires a type_defaults function (see below))
         # -- pass down type_defaults _string_mode (warn / trim / fail) ?
         defaults = cls.from_tuple([type_defaults[t] if not t.endswith("s") else "" for t in types],
                                   _mapping=_mapping, _format=_format)
@@ -282,14 +307,18 @@ class MappedArray:
         return cls.from_tuple(_tuple, _mapping=_mapping, _format=_format)
 
     @classmethod
+    def from_stream(cls, stream: io.BytesIO, _mapping: Any = None, _format: str = None) -> MappedArray:
+        return cls.from_bytes(stream.read(struct.calcsize(cls._format)), _mapping, _format)
+
+    @classmethod
     def from_tuple(cls, array: Iterable, _mapping: Any = None, _format: str = None) -> MappedArray:
         if _format is None:
             _format = cls._format
         if _mapping is None:
             _mapping = cls._mapping
-        assert len(array) == mapping_length(_mapping), f"{cls.__name__}({array}, _mapping={_mapping})"
+        assert len(array) == mapping_length({None: _mapping}), f"{cls.__name__}({array}, _mapping={_mapping})"
         out_args = list()
-        if not isinstance(_mapping, (dict, list)):
+        if not isinstance(_mapping, (dict, list, int)):
             raise RuntimeError(f"Unexpected mapping: {type(_mapping)}")
         elif isinstance(_mapping, dict):
             types = split_format(_format)
@@ -300,16 +329,19 @@ class MappedArray:
                     length = mapping_length({None: child_mapping})
                     segment = array[array_index:array_index + length]
                     child_format = "".join(types[array_index:array_index + length])
-                    array_index += len(child_mapping)
+                    array_index += mapping_length({None: child_mapping})
                     child = MappedArray.from_tuple(segment, _mapping=child_mapping, _format=child_format)
                     # NOTE: ^ will recurse again if child_mapping is a dict
                 else:  # if {"attr": None}
-                    array_index += 1
                     child = array[array_index]  # take a single item, not a slice
+                    array_index += 1
                 out_args.append(child)
         elif isinstance(_mapping, list):  # List[str]
             out_args = array
-        out = cls(*out_args, _mapping=_mapping, _format=_format)
+        if not isinstance(_mapping, int):
+            out = cls(*out_args, _mapping=_mapping, _format=_format)
+        else:
+            out = list(array)  # LAZY HACK?
         return out
 
     def as_bytes(self) -> bytes:

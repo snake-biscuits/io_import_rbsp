@@ -6,20 +6,17 @@ from . import cso2
 
 FILE_MAGIC = b"VBSP"
 
-BSP_VERSION = 100  # 1.00?
+BSP_VERSION = 100
 
-GAME_PATHS = ["Counter-Strike: Online 2"]
+GAME_PATHS = {"Counter-Strike: Online 2": "CSO2"}
 
-GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
+GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
 
 LUMP = cso2.LUMP
 
 
-# struct CSO2BspHeader { char file_magic[4]; int version; CSO2LumpHeader headers[64]; int revision; };
-lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
-
-read_lump_header = cso2.read_lump_header
+LumpHeader = cso2.LumpHeader
 
 
 # classes for each lump, in alphabetical order:

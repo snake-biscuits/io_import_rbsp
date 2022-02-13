@@ -3,6 +3,7 @@
 import enum
 
 from .. import shared
+from ..id_software import quake
 from ..id_software import quake3
 
 
@@ -10,11 +11,11 @@ FILE_MAGIC = b"RBSP"
 
 BSP_VERSION = 1
 
-GAME_PATHS = ["Soldier of Fortune 2",
-              "Star Wars Jedi Knight - Jedi Academy",
-              "Star Wars Jedi Knight II - Jedi Outcast"]
+GAME_PATHS = {"Soldier of Fortune 2": "SoF2",  # .pk3 extractions
+              "Star Wars Jedi Knight - Jedi Academy": "StarWarsJediKnight",
+              "Star Wars Jedi Knight II - Jedi Outcast": "StarWarsJediKnightII"}
 
-GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
+GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -38,8 +39,7 @@ class LUMP(enum.Enum):
     LIGHT_ARRAY = 17
 
 
-# struct RavenBspHeader { char file_magic[4]; int version; QuakeLumpHeader headers[18]; };
-lump_header_address = {LUMP_ID: (8 + i * 8) for i, LUMP_ID in enumerate(LUMP)}
+LumpHeader = quake.LumpHeader
 
 # Known lump changes from Quake 3 -> Raven:
 # New:

@@ -1,3 +1,4 @@
+from ..id_software import quake
 from ..id_software import quake2
 
 
@@ -5,16 +6,15 @@ FILE_MAGIC = b"IBSP"
 
 BSP_VERSION = 46
 
-GAME_PATHS = ["Soldier of Fortune"]
+GAME_PATHS = {"Soldier of Fortune": "SoF"}
 
-GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
+GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
 
 LUMP = quake2.LUMP
 
 
-# struct Quake2BspHeader { char file_magic[4]; int version; QuakeLumpHeader headers[19]; };
-lump_header_address = {LUMP_ID: (8 + i * 8) for i, LUMP_ID in enumerate(LUMP)}
+LumpHeader = quake.LumpHeader
 
 
 BASIC_LUMP_CLASSES = quake2.BASIC_LUMP_CLASSES.copy()

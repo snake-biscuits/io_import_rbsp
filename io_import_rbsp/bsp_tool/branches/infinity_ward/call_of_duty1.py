@@ -5,16 +5,17 @@ from typing import List
 from .. import base
 from .. import shared
 from ..id_software import quake
-# from ..id_software import quake3
+# from ..id_software import quake3  # RTCW based
 
 
 FILE_MAGIC = b"IBSP"
 
 BSP_VERSION = 59
 
-GAME_PATHS = ["Call of Duty", "Call of Duty: United Offensive"]
+GAME_PATHS = {"Call of Duty": "Call of Duty",
+              "Call of Duty: United Offensive": "Call of Duty"}
 
-GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
+GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -46,14 +47,15 @@ class LUMP(enum.Enum):
     COLLISION_INDICES = 26
     MODELS = 27
     VISIBILITY = 28
-    LIGHTS = 29
-    ENTITIES = 30
+    ENTITIES = 29
+    LIGHTS = 30
     UNKNOWN_31 = 31  # FOGS ?
     # big "32nd lump" at end of file, not in header?
 
 
-# struct InfinityWardBspHeader { char file_magic[4]; int version; QuakeLumpHeader headers[32]; };
-lump_header_address = {LUMP_ID: (8 + i * 8) for i, LUMP_ID in enumerate(LUMP)}
+class LumpHeader(base.MappedArray):
+    _mapping = ["length", "offset"]
+    _format = "2I"
 
 
 # classes for lumps, in alphabetical order:
@@ -120,12 +122,11 @@ class Light(base.Struct):  # LUMP 30
 
 class Lightmap(list):  # LUMP 1
     """Raw pixel bytes, 512x512 RGB_888 image"""
+    _pixels: List[bytes] = [b"\0" * 3] * 512 * 512
     _format = "3s" * 512 * 512  # 512x512 RGB_888
 
-    def __init__(self, _tuple):
-        self._pixels: List[bytes] = _tuple  # RGB_888
-
-    def __getitem__(self, row) -> List[bytes]:  # returns 3 bytes: b"\xRR\xGG\xBB"
+    def __getitem__(self, row) -> bytes:
+        r"""returns 3 bytes: b'\xRR\xGG\xBB'"""
         # Lightmap[row][column] returns self.__getitem__(row)[column]
         # to get a specific pixel: self._pixels[index]
         row_start = row * 512
@@ -133,6 +134,12 @@ class Lightmap(list):  # LUMP 1
 
     def flat(self) -> bytes:
         return b"".join(self._pixels)
+
+    @classmethod
+    def from_tuple(cls, _tuple):
+        out = cls()
+        out._pixels = _tuple  # RGB_888
+        return out
 
 
 class Model(base.Struct):  # LUMP 27

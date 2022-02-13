@@ -6,6 +6,7 @@ from typing import List
 
 from .. import base
 from .. import shared
+from ..id_software import quake
 from . import fakk2
 
 
@@ -13,9 +14,9 @@ FILE_MAGIC = b"EF2!"
 
 BSP_VERSION = 20
 
-GAME_PATHS = ["Star Trek: Elite Force II"]
+GAME_PATHS = {"Star Trek: Elite Force II": "StarTrekEliteForceII"}
 
-GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
+GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -51,8 +52,7 @@ class LUMP(enum.Enum):
     BSP_INFO = 29
 
 
-# RitualBspHeader { char file_magic[4]; int version, checksum; QuakeLumpHeader headers[20]; };
-lump_header_address = {LUMP_ID: (12 + i * 8) for i, LUMP_ID in enumerate(LUMP)}
+LumpHeader = quake.LumpHeader
 
 
 # classes for lumps, in alphabetical order:

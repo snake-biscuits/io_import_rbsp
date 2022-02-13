@@ -1,12 +1,15 @@
 """Index of all known .bsp format variants"""
 __all__ = ["arkane", "gearbox", "id_software", "infinity_ward", "nexon",
-           "raven", "respawn", "ritual", "scripts_from_file_magic", "game_path_table"]
+           "raven", "respawn", "ritual",
+           "scripts_from_file_magic", "script_from_file_magic_and_version",
+           "game_name_table"]
 
 from . import arkane
 from . import gearbox
 from . import id_software
 from . import infinity_ward
 from . import ion_storm
+from . import loiste
 from . import nexon
 from . import raven
 from . import respawn
@@ -29,17 +32,27 @@ scripts_from_file_magic = {None: [id_software.quake,
                            b"IBSP": [id_software.quake2,
                                      id_software.quake3,
                                      *infinity_ward.scripts,
-                                     # NOTE: most of infinity_ward.scripts will be *.d3dbsp
                                      ion_storm.daikatana,
                                      raven.soldier_of_fortune,
                                      ritual.sin],
-                           b"rBSP": [*respawn.scripts],
+                           b"PSBr": [respawn.titanfall_x360],
+                           b"PSBV": [valve.orange_box_x360,
+                                     valve.sdk_2013_x360],
+                           b"rBSP": [respawn.apex_legends,
+                                     respawn.titanfall,
+                                     respawn.titanfall2],
                            b"RBSP": [raven.soldier_of_fortune2,
                                      ritual.sin],
                            b"VBSP": [*arkane.scripts,
+                                     loiste.infra,
                                      *nexon.scripts,
-                                     *troika.scripts,
-                                     *[s for s in valve.scripts if (s is not valve.goldsrc)]]}
+                                     troika.vampire,
+                                     valve.alien_swarm,
+                                     valve.left4dead,
+                                     valve.left4dead2,
+                                     valve.orange_box,
+                                     valve.sdk_2013,
+                                     valve.source]}
 
 
 script_from_file_magic_and_version = dict()
@@ -62,9 +75,9 @@ script_from_file_magic_and_version[(b"RBSP", 1)] = raven.soldier_of_fortune2
 # ^ NOT ritual.sin
 
 
-game_path_table = dict()
+game_name_table = dict()
 # ^ {"game": (script, version)}
 for developer in (arkane, gearbox, id_software, infinity_ward, nexon, raven, respawn, ritual, valve):
     for script in developer.scripts:
-        for game_path in script.GAME_PATHS:
-            game_path_table[game_path] = (script, script.GAME_VERSIONS[game_path])
+        for game_name in script.GAME_VERSIONS:
+            game_name_table[game_name] = (script, script.GAME_VERSIONS[game_name])

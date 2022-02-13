@@ -1,3 +1,4 @@
+from __future__ import annotations
 import enum
 import io
 import struct
@@ -12,7 +13,7 @@ FILE_MAGIC = b"rBSP"
 
 BSP_VERSION = 37
 
-GAME_PATHS = ["Titanfall 2"]
+GAME_PATHS = {"Titanfall 2": "Titanfall2"}
 
 GAME_VERSIONS = {"Titanfall 2": 37}
 
@@ -25,7 +26,7 @@ class LUMP(enum.Enum):
     LIGHTPROBE_PARENT_INFOS = 0x0004
     SHADOW_ENVIRONMENTS = 0x0005
     LIGHTPROBE_BSP_NODES = 0x0006
-    LIGHTPROBE_BSP_REF_IDS = 0x0007
+    LIGHTPROBE_BSP_REF_IDS = 0x0007  # indexes? (Mod_LoadLightProbeBSPRefIdxs)
     UNUSED_8 = 0x0008
     UNUSED_9 = 0x0009
     UNUSED_10 = 0x000A
@@ -54,7 +55,7 @@ class LUMP(enum.Enum):
     UNUSED_33 = 0x0021
     UNUSED_34 = 0x0022
     GAME_LUMP = 0x0023
-    UNUSED_36 = 0x0024
+    LEAF_WATER_DATA = 0x0024
     UNUSED_37 = 0x0025
     UNUSED_38 = 0x0026
     UNUSED_39 = 0x0027
@@ -72,8 +73,8 @@ class LUMP(enum.Enum):
     UNUSED_51 = 0x0033
     UNUSED_52 = 0x0034
     UNUSED_53 = 0x0035
-    WORLDLIGHTS = 0x0036
-    WORLDLIGHTS_PARENT_INFO = 0x0037
+    WORLD_LIGHTS = 0x0036  # versions 1 - 3 supported (0 might cause a crash, idk)
+    WORLD_LIGHT_PARENT_INFOS = 0x0037
     UNUSED_56 = 0x0038
     UNUSED_57 = 0x0039
     UNUSED_58 = 0x003A
@@ -120,7 +121,7 @@ class LUMP(enum.Enum):
     CSM_AABB_NODES = 0x0063
     CSM_OBJ_REFERENCES = 0x0064
     LIGHTPROBES = 0x0065
-    STATIC_PROP_LIGHTPROBE_INDEX = 0x0066
+    STATIC_PROP_LIGHTPROBE_INDICES = 0x0066
     LIGHTPROBE_TREE = 0x0067
     LIGHTPROBE_REFERENCES = 0x0068
     LIGHTMAP_DATA_REAL_TIME_LIGHTS = 0x0069
@@ -148,8 +149,8 @@ class LUMP(enum.Enum):
     SHADOW_MESH_MESHES = 0x007F
 
 
-# struct RespawnBspHeader { char file_magic[4]; int version, revision, lump_count; SourceLumpHeader headers[128]; };
-lump_header_address = {LUMP_ID: (16 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
+LumpHeader = source.LumpHeader
+
 
 # Known lump changes from Titanfall -> Titanfall 2:
 # New:
@@ -157,7 +158,7 @@ lump_header_address = {LUMP_ID: (16 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
 # UNUSED_5 -> SHADOW_ENVIRONMENTS
 # UNUSED_6 -> LIGHTPROBE_BSP_NODES
 # UNUSED_7 -> LIGHTPROBE_BSP_REF_IDS
-# UNUSED_55 -> WORLDLIGHTS_PARENT_INFO
+# UNUSED_55 -> WORLD_LIGHT_PARENT_INFOS
 # UNUSED_122 -> LIGHTMAP_DATA_RTL_PAGE
 # Deprecated:
 # LEAF_WATER_DATA
@@ -165,35 +166,42 @@ lump_header_address = {LUMP_ID: (16 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
 # PHYSICS_TRIANGLES
 
 # Rough map of the relationships between lumps:
-# Model -> Mesh -> MaterialSort -> TextureData
-#                             \--> VertexReservedX
-#                              \-> MeshIndex
-#
-# MeshBounds & Mesh (must have equal number of each)
-#
-# TextureData -> TextureDataStringTable -> TextureDataStringTable
-# VertexReservedX -> Vertex
-#                \-> VertexNormal
-#
-# ??? -> ShadowMeshIndices -?> ShadowMesh -> ???
+#              /-> MaterialSort -> TextureData -> TextureDataStringTable -> TextureDataStringData
+# Model -> Mesh -> MeshIndex -\-> VertexReservedX -> Vertex
+#             \--> .flags (VertexReservedX)     \--> VertexNormal
+#              \-> VertexReservedX               \-> .uv
+
+# MeshBounds & Mesh are indexed in paralell?
+
+# ShadowEnvironment -> ShadowMesh -> ShadowMeshIndices -> ShadowMeshOpaqueVertex
+#                                                    \-?> ShadowMeshAlphaVertex
+
 # ??? -> Brush -?> Plane
-#
+
 # LightmapHeader -> LIGHTMAP_DATA_SKY
 #               \-> LIGHTMAP_DATA_REAL_TIME_LIGHTS
-#
+
 # Portal -?> PortalEdge -> PortalVertex
 # PortalEdgeRef -> PortalEdge
 # PortalVertRef -> PortalVertex
 # PortalEdgeIntersect -> PortalEdge?
 #                    \-> PortalVertex
-#
-# PortalEdgeIntersectHeader -> ???
+
+# PortalEdgeIntersectHeader -?> PortalEdgeIntersect ? (parallel indices?)
 # NOTE: there are always as many intersect headers as edges
 # NOTE: there are also always as many vert refs as edge refs
 
+# ??? WorldLight <-?-> WorldLightParentInfo -?> Model
 
-# # classes for lumps, in alphabetical order::
-class LightmapPage(base.Struct):
+
+# engine limits:
+class MAX(enum.Enum):
+    MODELS = 1024
+    TEXTURES = 2048
+
+
+# classes for lumps, in alphabetical order::
+class LightmapPage(base.Struct):  # LUMP 122 (007A)
     data: bytes
     _format = "128s"
     __slots__ = ["data"]
@@ -202,14 +210,40 @@ class LightmapPage(base.Struct):
 # TODO: LightProbeRef
 
 
+class WorldLightv2(base.Struct):  # LUMP 54 (0036)
+    __slots__ = ["unknown"]
+    _format = "27I"  # 108 bytes
+    _arrays = {"unknown": 27}
+
+
+class WorldLightv3(base.Struct):  # LUMP 54 (0036)
+    __slots__ = ["unknown"]
+    _format = "28I"  # 112 bytes
+    _arrays = {"unknown": 28}
+
+
+class ShadowEnvironment(base.Struct):
+    """Identified w/ BobTheBob; appears linked to dynamic shadows and optimisation"""
+    # making modifications caused severe framerate drops (2fps)
+    unknown_1: List[int]  # likely indices into other lumps
+    first_shadow_mesh: int  # first ShadowMesh in this ShadowEnvironment
+    unknown_2: List[int]  # likely indices into other lumps
+    num_shadow_meshes: int  # number of ShadowMeshes in this ShadowEnvironment after first_shadow_mesh
+    unknown_3: List[int]  # no clue
+    __slots__ = ["unknown_1", "first_shadow_mesh", "unknown_2", "num_shadow_meshes", "unknown_3"]
+    _format = "6i6H"
+    _arrays = {"unknown_1": 2, "unknown_2": 2, "unknown_3": 6}
+
+
 class StaticPropv13(base.Struct):  # sprp GAME_LUMP (0023)
+    """Identified w/ BobTheBob"""
     origin: List[float]  # x, y, z
-    angles: List[float]  # pitch, yaw, roll
-    unknown_1: List[int]
+    angles: List[float]  # pitch, yaw, roll (Y Z X)
+    scale: float  # indentified by Legion dev DTZxPorter
     model_name: int  # index into GAME_LUMP.sprp.model_names
     solid_mode: int  # bitflags
     flags: int
-    unknown_2: List[int]
+    unknown: List[int]
     forced_fade_scale: float
     lighting_origin: List[float]  # x, y, z
     cpu_level: List[int]  # min, max (-1 = any)
@@ -217,11 +251,11 @@ class StaticPropv13(base.Struct):  # sprp GAME_LUMP (0023)
     diffuse_modulation: List[int]  # RGBA 32-bit colour
     collision_flags: List[int]  # add, remove
     # NOTE: no skin or cubemap
-    __slots__ = ["origin", "angles", "unknown_1", "model_name", "solid_mode", "flags",
-                 "unknown_2", "forced_fade_scale", "lighting_origin", "cpu_level",
+    __slots__ = ["origin", "angles", "scale", "model_name", "solid_mode", "flags",
+                 "unknown", "forced_fade_scale", "lighting_origin", "cpu_level",
                  "gpu_level", "diffuse_modulation", "collision_flags"]
-    _format = "6f4bH2B4b4f8b2H"  # 64 bytes
-    _arrays = {"origin": [*"xyz"], "angles": [*"yzx"], "unknown_1": 4, "unknown_2": 4,
+    _format = "7fH2B4b4f8b2H"  # 64 bytes
+    _arrays = {"origin": [*"xyz"], "angles": [*"yzx"], "unknown": 4,
                "lighting_origin": [*"xyz"], "cpu_level": ["min", "max"],
                "gpu_level": ["min", "max"], "diffuse_modulation": [*"rgba"],
                "collision_flags": ["add", "remove"]}
@@ -229,42 +263,49 @@ class StaticPropv13(base.Struct):  # sprp GAME_LUMP (0023)
 
 # classes for special lumps, in alphabetical order:
 class GameLump_SPRP:
-    """New in Titanfall 2"""
-    _static_prop_format: str  # StaticPropClass._format
-    model_names: List[str]
+    """use `lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropvXX)` to implement"""
+    StaticPropClass: object  # StaticPropv13
+    model_names: List[str]  # filenames of all .mdl / .rmdl used
     unknown_1: int
     unknown_2: int  # indices?
-    props: List[object]  # List[StaticPropClass]
+    props: List[object] | List[bytes]  # List[StaticPropClass]
+    unknown_3: bytes
 
     def __init__(self, raw_sprp_lump: bytes, StaticPropClass: object):
-        self._static_prop_format = StaticPropClass._format
+        self.StaticPropClass = StaticPropClass
         sprp_lump = io.BytesIO(raw_sprp_lump)
         model_names_count = int.from_bytes(sprp_lump.read(4), "little")
         model_names = struct.iter_unpack("128s", sprp_lump.read(128 * model_names_count))
         setattr(self, "model_names", [t[0].replace(b"\0", b"").decode() for t in model_names])
         prop_count, unknown_1, unknown_2 = struct.unpack("3i", sprp_lump.read(12))
         self.unknown_1, self.unknown_2 = unknown_1, unknown_2
-        # TODO: if StaticPropClass is None: split into appropriate groups of bytes
         read_size = struct.calcsize(StaticPropClass._format) * prop_count
         props = struct.iter_unpack(StaticPropClass._format, sprp_lump.read(read_size))
         setattr(self, "props", list(map(StaticPropClass.from_tuple, props)))
-        # TODO: check if are there any leftover bytes at the end?
+        self.unknown_3 = sprp_lump.read()
 
     def as_bytes(self) -> bytes:
-        # NOTE: additions to .props must be of the correct type,
-        #  GameLump_SPRP does not perform conversions of any kind!
-        return b"".join([int.to_bytes(len(self.model_names), 4, "little"),
-                         *[struct.pack("128s", n) for n in self.model_names],
-                         *struct.pack("3I", len(self.props), self.unknown_1, self.unknown_2),
-                         *[struct.pack(self._static_prop_format, *p.flat()) for p in self.props]])
+        if len(self.props) > 0:
+            prop_bytes = [struct.pack(self.StaticPropClass._format, *p.flat()) for p in self.props]
+        else:
+            prop_bytes = []
+        return b"".join([len(self.model_names).to_bytes(4, "little"),
+                        *[struct.pack("128s", n.encode("ascii")) for n in self.model_names],
+                        struct.pack("3I", len(self.props), self.unknown_1, self.unknown_2),
+                        *prop_bytes,
+                        self.unknown_3])
 
 
 # {"LUMP_NAME": {version: LumpClass}}
 BASIC_LUMP_CLASSES = titanfall.BASIC_LUMP_CLASSES.copy()
 
 LUMP_CLASSES = titanfall.LUMP_CLASSES.copy()
-LUMP_CLASSES["LIGHTMAP_DATA_REAL_TIME_LIGHTS_PAGE"] = {0: LightmapPage}
 LUMP_CLASSES.pop("LIGHTPROBE_REFERENCES")  # size doesn't match
+LUMP_CLASSES.update({"LIGHTMAP_DATA_REAL_TIME_LIGHTS_PAGE": {0: LightmapPage},
+                     "SHADOW_ENVIRONMENTS":                 {0: ShadowEnvironment},
+                     "WORLD_LIGHTS":                        {1: titanfall.WorldLight,
+                                                             2: WorldLightv2,
+                                                             3: WorldLightv3}})
 
 SPECIAL_LUMP_CLASSES = titanfall.SPECIAL_LUMP_CLASSES.copy()
 

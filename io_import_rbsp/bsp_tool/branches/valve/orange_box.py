@@ -10,18 +10,18 @@ from . import source
 
 FILE_MAGIC = b"VBSP"
 
-BSP_VERSION = 20  # NOTE: v20 Source BSPs differ widely, since many forks are of this version
+BSP_VERSION = 20
 
-GAME_PATHS = ["Day of Defeat: Source",  # TODO: full paths
-              "G String",
-              "Garry's Mod",
-              "Half-Life 2: Episode 2",
-              "Half-Life 2 Update",
-              "NEOTOKYO",
-              "Portal",
-              "Team Fortress 2"]
+GAME_PATHS = {"Day of Defeat: Source": "day of defeat source/dod",
+              "G-String": "G String/gstringv2",
+              "Garry's Mod": "GarrysMod/garrysmod",
+              "Half-Life 2: Episode 2": "half-life 2/ep2",
+              "Half-Life 2 Update": "Half-Life 2 Update/hl2",
+              "NEOTOKYO": "NEOTOKYO/neotokyosource",
+              "Portal": "Portal/portal",
+              "Team Fortress 2": "Team Fortress 2/tf"}
 
-GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
+GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -91,22 +91,14 @@ class LUMP(enum.Enum):
     UNUSED_63 = 63
 
 
-# struct SourceBspHeader { char file_magic[4]; int version; SourceLumpHeader headers[64]; int revision; };
-lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
-
-
-def read_lump_header(file, LUMP: enum.Enum) -> source.SourceLumpHeader:
-    file.seek(lump_header_address[LUMP])
-    offset, length, version, fourCC = struct.unpack("4I", file.read(16))
-    header = source.SourceLumpHeader(offset, length, version, fourCC)
-    return header
+LumpHeader = source.LumpHeader
 
 # a rough map of the relationships between lumps:
-#
+
 #                     /-> SurfEdge -> Edge -> Vertex
 # Leaf -> Node -> Face -> Plane
 #                     \-> DisplacementInfo -> DisplacementVertex
-#
+
 # ClipPortalVertices are AreaPortal geometry [citation neeeded]
 
 
@@ -156,7 +148,7 @@ class PhysicsDisplacement(list):  # LUMP 28
 class StaticPropv10(base.Struct):  # sprp GAME LUMP (LUMP 35)
     origin: List[float]  # origin.xyz
     angles: List[float]  # origin.yzx  QAngle; Z0 = East
-    name_index: int  # index into AME_LUMP.sprp.model_names
+    model_name: int  # index into AME_LUMP.sprp.model_names
     first_leaf: int  # index into Leaf lump
     num_leafs: int  # number of Leafs after first_leaf this StaticPropv10 is in
     solid_mode: int  # collision flags enum
@@ -180,6 +172,8 @@ class StaticPropv10(base.Struct):  # sprp GAME LUMP (LUMP 35)
 BASIC_LUMP_CLASSES = source.BASIC_LUMP_CLASSES.copy()
 
 LUMP_CLASSES = source.LUMP_CLASSES.copy()
+LUMP_CLASSES.pop("LEAF_AMBIENT_LIGHTING")
+LUMP_CLASSES.pop("LEAF_AMBIENT_LIGHTING_HDR")
 LUMP_CLASSES.update({"LEAVES": {1: Leaf}})
 
 SPECIAL_LUMP_CLASSES = source.SPECIAL_LUMP_CLASSES.copy()

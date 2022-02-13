@@ -1,15 +1,12 @@
-# https://developer.valvesoftware.com/wiki/Left_4_Dead_(engine_branch)
 import enum
 
-from . import orange_box
-from . import source
+from ..valve import sdk_2013
+from ..valve import source
 
 
-FILE_MAGIC = b"VBSP"
+BSP_VERSION = 22
 
-BSP_VERSION = 20
-
-GAME_PATHS = {"Left 4 Dead": "left 4 dead/left4dead"}
+GAME_PATHS = {"INFRA": "infra/infra"}
 
 GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
@@ -37,8 +34,8 @@ class LUMP(enum.Enum):
     BRUSH_SIDES = 19
     AREAS = 20
     AREA_PORTALS = 21
-    UNUSED_22 = 22
-    UNUSED_23 = 23
+    FACE_BRUSHES = 22  # infra
+    FACE_BRUSH_LIST = 23  # infra
     UNUSED_24 = 24
     UNUSED_25 = 25
     DISPLACEMENT_INFO = 26
@@ -47,13 +44,13 @@ class LUMP(enum.Enum):
     PHYSICS_COLLIDE = 29
     VERTEX_NORMALS = 30
     VERTEX_NORMAL_INDICES = 31
-    DISPLACEMENT_LIGHTMAP_ALPHAS = 32
+    DISPLACEMENT_LIGHTMAP_ALPHAS = 32  # deprecated / X360 ?
     DISPLACEMENT_VERTICES = 33
     DISPLACEMENT_LIGHTMAP_SAMPLE_POSITIONS = 34
     GAME_LUMP = 35
     LEAF_WATER_DATA = 36
     PRIMITIVES = 37
-    PRIMITIVE_VERTICES = 38
+    PRIMITIVE_VERTICES = 38  # deprecated / X360 ?
     PRIMITIVE_INDICES = 39
     PAKFILE = 40
     CLIP_PORTAL_VERTICES = 41
@@ -64,55 +61,41 @@ class LUMP(enum.Enum):
     LEAF_MIN_DIST_TO_WATER = 46
     FACE_MACRO_TEXTURE_INFO = 47
     DISPLACEMENT_TRIS = 48
-    PHYSICS_COLLIDE_SURFACE = 49
-    WATER_OVERLAYS = 50
+    PROP_BLOB = 49  # left4dead
+    WATER_OVERLAYS = 50  # deprecated / X360 ?
     LEAF_AMBIENT_INDEX_HDR = 51
     LEAF_AMBIENT_INDEX = 52
     LIGHTING_HDR = 53
     WORLD_LIGHTS_HDR = 54
     LEAF_AMBIENT_LIGHTING_HDR = 55
     LEAF_AMBIENT_LIGHTING = 56
-    XZIP_PAKFILE = 57
+    XZIP_PAKFILE = 57  # deprecated / X360 ?
     FACES_HDR = 58
     MAP_FLAGS = 59
     OVERLAY_FADES = 60
-    LUMP_OVERLAY_SYSTEM_LEVELS = 61  # overlay CPU & GPU limits
-    UNUSED_62 = 62
-    UNUSED_63 = 63
+    OVERLAY_SYSTEM_LEVELS = 61  # left4dead
+    PHYSICS_LEVEL = 62  # left4dead2
+    DISPLACEMENT_MULTIBLEND = 63  # alienswarm
 
 
 LumpHeader = source.LumpHeader
 
-# Known lump changes from Orange Box -> Left 4 Dead:
+# Known lump changes from SDK 2013 -> Infra
 # New:
-#   UNUSED_61 -> LUMP_OVERLAY_SYSTEM_LEVELS
-
-
-# classes for lumps, in alphabetical order:
-
-
-# classes for special lumps, in alphabetical order:
-# TODO: StaticPropv8
+#   FACE_BRUSHES
+#   FACE_BRUSHES_LIST
 
 
 # {"LUMP_NAME": {version: LumpClass}}
-BASIC_LUMP_CLASSES = orange_box.BASIC_LUMP_CLASSES.copy()
+BASIC_LUMP_CLASSES = sdk_2013.BASIC_LUMP_CLASSES.copy()
 
-LUMP_CLASSES = orange_box.LUMP_CLASSES.copy()
-LUMP_CLASSES.pop("WORLD_LIGHTS")
-LUMP_CLASSES.pop("WORLD_LIGHTS_HDR")
+LUMP_CLASSES = sdk_2013.LUMP_CLASSES.copy()
+LUMP_CLASSES.pop("PRIMITIVES")
 
-SPECIAL_LUMP_CLASSES = orange_box.SPECIAL_LUMP_CLASSES.copy()
+SPECIAL_LUMP_CLASSES = sdk_2013.SPECIAL_LUMP_CLASSES.copy()
 
-GAME_LUMP_HEADER = orange_box.GAME_LUMP_HEADER
+GAME_LUMP_HEADER = sdk_2013.GAME_LUMP_HEADER
 
-# {"lump": {version: SpecialLumpClass}}
-GAME_LUMP_CLASSES = orange_box.GAME_LUMP_CLASSES.copy()
-GAME_LUMP_CLASSES["sprp"].pop(7)
-# TODO: GAME_LUMP_CLASSES["sprp"].update({8: lambda raw_lump: source.GameLump_SPRP(raw_lump, StaticPropv8)})
+GAME_LUMP_CLASSES = sdk_2013.GAME_LUMP_CLASSES.copy()
 
-
-# branch exclusive methods, in alphabetical order:
-
-
-methods = [*orange_box.methods]
+methods = [*sdk_2013.methods]

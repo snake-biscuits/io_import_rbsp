@@ -1,6 +1,6 @@
 # https://developer.valvesoftware.com/wiki/Source_BSP_File_Format/Game-Specific#Vindictus
 """Vindictus. A MMO-RPG build in the Source Engine. Also known as Mabinogi Heroes"""
-import collections
+from __future__ import annotations
 import enum
 import io
 import itertools
@@ -16,9 +16,9 @@ FILE_MAGIC = b"VBSP"
 
 BSP_VERSION = 20
 
-GAME_PATHS = ["Vindictus"]
+GAME_PATHS = {"Vindictus": "Vindictus"}
 
-GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
+GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -88,17 +88,14 @@ class LUMP(enum.Enum):
     UNUSED_63 = 63
 
 
-# struct VindictusBspHeader { char file_magic[4]; int version; VindictusLumpHeader headers[64]; int revision; };
-lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
-
-VindictusLumpHeader = collections.namedtuple("VindictusLumpHeader", ["id", "flags", "version", "offset", "length"])
-
-
-def read_lump_header(file, LUMP_ID: enum.Enum) -> VindictusLumpHeader:
-    file.seek(lump_header_address[LUMP_ID])
-    id, flags, version, offset, length = struct.unpack("5i", file.read(20))
-    header = VindictusLumpHeader(id, flags, version, offset, length)
-    return header
+class LumpHeader(base.MappedArray):
+    id: int  # lump index?
+    offset: int  # index in .bsp file where lump begins
+    length: int
+    version: int
+    fourCC: int  # uncompressed size (big endian for some reason)
+    _mapping = ["id", "flags", "version", "offset", "length"]
+    _format = "5I"
 
 
 # class for each lump in alphabetical order: [10 / 64] + orange_box.LUMP_CLASSES
@@ -232,12 +229,22 @@ class Node(base.Struct):  # LUMP 5
 
 
 class Overlay(base.Struct):  # LUMP 45
+    id: int
+    texture_info: int  # index to this Overlay's TextureInfo
+    face_count_and_render_order: int  # render order uses the top 2 bits
+    faces: List[int]  # face indices this overlay is tied to (need face_count to read accurately)
+    u: List[float]  # mins & maxs?
+    v: List[float]  # mins & maxs?
+    uv_points: List[List[float]]  # Vector[4]; 3D corners of the overlay?
+    origin: List[float]
+    normal: List[float]
     __slots__ = ["id", "texture_info", "face_count_and_render_order",
                  "faces", "u", "v", "uv_points", "origin", "normal"]
-    _format = "2iIi4f18f"
-    _arrays = {"faces": 64,  # OVERLAY_BSP_FACE_COUNT (bspfile.h:998)
+    _format = "2iI64i22f"
+    _arrays = {"faces": 64,  # OVERLAY_BSP_FACE_COUNT (src/public/bspfile.h:998)
                "u": 2, "v": 2,
-               "uv_points": {P: [*"xyz"] for P in "ABCD"}}
+               "uv_points": {P: [*"xyz"] for P in "ABCD"},
+               "origin": [*"xyz"], "normal": [*"xyz"]}
 
 
 # classes for special lumps, in alphabetical order:
@@ -252,9 +259,14 @@ class GameLumpHeader(base.MappedArray):
 
 
 class GameLump_SPRP:
+    """use `lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropvXX)` to implement"""
+    StaticPropClass: object
+    model_names: List[str]
+    leaves: List[int]
+    scales: List[StaticPropScale]
+    props: List[object]  # List[StaticPropClass]
+
     def __init__(self, raw_sprp_lump: bytes, StaticPropClass: object):
-        """Get StaticPropClass from GameLump version"""
-        # lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropvXX)
         sprp_lump = io.BytesIO(raw_sprp_lump)
         model_name_count = int.from_bytes(sprp_lump.read(4), "little")
         model_names = struct.iter_unpack("128s", sprp_lump.read(128 * model_name_count))
@@ -262,11 +274,11 @@ class GameLump_SPRP:
         leaf_count = int.from_bytes(sprp_lump.read(4), "little")
         leaves = itertools.chain(*struct.iter_unpack("H", sprp_lump.read(2 * leaf_count)))
         setattr(self, "leaves", list(leaves))
-        prop_count = int.from_bytes(sprp_lump.read(4), "little")
         scale_count = int.from_bytes(sprp_lump.read(4), "little")
         read_size = struct.calcsize(StaticPropScale._format) * scale_count
         scales = struct.iter_unpack(StaticPropScale._format, sprp_lump.read(read_size))
         setattr(self, "scales", list(scales))
+        prop_count = int.from_bytes(sprp_lump.read(4), "little")
         if StaticPropClass is not None:
             read_size = struct.calcsize(StaticPropClass._format) * prop_count
             props = struct.iter_unpack(StaticPropClass._format, sprp_lump.read(read_size))
@@ -274,6 +286,7 @@ class GameLump_SPRP:
         else:
             prop_bytes = sprp_lump.read()
             prop_size = len(prop_bytes) // prop_count
+            # NOTE: will break if prop_size does not divide evenly by prop_count
             setattr(self, "props", list(struct.iter_unpack(f"{prop_size}s", prop_bytes)))
         here = sprp_lump.tell()
         end = sprp_lump.seek(0, 2)
@@ -281,9 +294,9 @@ class GameLump_SPRP:
 
     def as_bytes(self) -> bytes:
         if len(self.props) > 0:
-            prop_format = self.props[0]._format
+            prop_bytes = [struct.pack(self.StaticPropClass._format, *p.flat()) for p in self.props]
         else:
-            prop_format = ""
+            prop_bytes = []
         return b"".join([int.to_bytes(len(self.model_names), 4, "little"),
                          *[struct.pack("128s", n) for n in self.model_names],
                          int.to_bytes(len(self.leaves), 4, "little"),
@@ -291,7 +304,7 @@ class GameLump_SPRP:
                          int.to_bytes(len(self.scales), 4, "little"),
                          *[struct.pack(StaticPropScale._format, s) for s in self.scales],
                          int.to_bytes(len(self.props), 4, "little"),
-                         *[struct.pack(prop_format, *p.flat()) for p in self.props]])
+                         *prop_bytes])
 
 
 class StaticPropScale(base.MappedArray):

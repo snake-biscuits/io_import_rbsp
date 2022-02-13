@@ -9,18 +9,14 @@ FILE_MAGIC = b"VBSP"
 
 BSP_VERSION = 17  # technically older than HL2's Source Engine branch
 
-GAME_PATHS = ["Vampire The Masquerade - Bloodlines"]
+GAME_PATHS = {"Vampire The Masquerade - Bloodlines": "Vampire The Masquerade - Bloodlines/Vampire"}
 
-GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
+GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
 
 LUMP = source.LUMP
 
-# struct SourceBspHeader { char file_magic[4]; int version; SourceLumpHeader headers[64]; int revision; };
-lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
-
-
-read_lump_header = source.read_lump_header
+LumpHeader = source.LumpHeader
 
 
 # classes for lumps, in alphabetical order:
@@ -46,8 +42,10 @@ class Face(base.Struct):  # LUMP 7
     __slots__ = ["light_colours", "plane", "side", "on_node", "first_edge", "num_edges",
                  "texture_info", "displacement_info", "surface_fog_volume_id", "styles",
                  "light_offset", "area", "lightmap", "original_face", "smoothing_groups"]
-    _format = "32BHb?i4h8b8b8bif5iI"
-    _arrays = {"light_colours": {i: [*"rgbe"] for i in range(8)},
+    _format = "32BHb?i4h8b8b8bif5iI"  # 104 bytes
+    # NOTE: integer keys in _arrays / MappedArray._mapping is not yet supported
+    # -- intended result: light_colour = [MappedArray(_mapping=[*"rgbe"])] * 8
+    _arrays = {"light_colours": {x: [*"rgbe"] for x in "ABCDEFGH"},
                "styles": {"base": 8, "day": 8, "night": 8},
                "lightmap": {"mins": [*"xy"], "size": ["width", "height"]}}
 
@@ -60,7 +58,7 @@ LUMP_CLASSES.update({"FACES":          {0: Face},
                      "ORIGINAL_FACES": {0: Face}})
 
 SPECIAL_LUMP_CLASSES = source.SPECIAL_LUMP_CLASSES.copy()
-SPECIAL_LUMP_CLASSES.pop("PHYSICS_COLLIDE")
+SPECIAL_LUMP_CLASSES.pop("PHYSICS_COLLIDE")  # interesting, is .phy different?
 
 GAME_LUMP_HEADER = source.GameLumpHeader
 

@@ -1,7 +1,6 @@
 """handles dynamically loading entries from lumps of all kinds"""
 from __future__ import annotations
 
-import collections
 import io
 import lzma
 import struct
@@ -9,7 +8,7 @@ from typing import Any, Dict, Union
 
 
 def _remap_negative_index(index: int, length: int) -> int:
-    "simplify to positive integer"
+    """simplify to positive integer"""
     if index < 0:
         index = length + index
     if index >= length or index < 0:
@@ -18,7 +17,7 @@ def _remap_negative_index(index: int, length: int) -> int:
 
 
 def _remap_slice(_slice: slice, length: int) -> slice:
-    "simplify to positive start & stop within range(0, length)"
+    """simplify to positive start & stop within range(0, length)"""
     start, stop, step = _slice.start, _slice.stop, _slice.step
     if start is None:
         start = 0
@@ -35,37 +34,32 @@ def _remap_slice(_slice: slice, length: int) -> slice:
     return slice(start, stop, step)
 
 
-def decompressed(file: io.BufferedReader, lump_header: collections.namedtuple) -> io.BytesIO:
+def decompress_valve_LZMA(data: bytes) -> bytes:
+    """valve LZMA header adapter"""
+    magic, true_size, compressed_size, properties = struct.unpack("4s2I5s", data[:17])
+    _filter = lzma._decode_filter_properties(lzma.FILTER_LZMA1, properties)
+    decompressor = lzma.LZMADecompressor(lzma.FORMAT_RAW, None, [_filter])
+    decompressed_data = decompressor.decompress(data[17:17 + compressed_size])
+    return decompressed_data[:true_size]  # trim any excess bytes
+
+
+def decompressed(file: io.BufferedReader, lump_header: Any) -> (io.BytesIO, Any):
     """Takes a lump and decompresses it if nessecary. Also corrects lump_header offset & length"""
     if getattr(lump_header, "fourCC", 0) != 0:
+        # get lump bytes
         if not hasattr(lump_header, "filename"):  # internal compressed lump
             file.seek(lump_header.offset)
             data = file.read(lump_header.length)
         else:  # external compressed lump is unlikely, but possible
             data = open(lump_header.filename, "rb").read()
-        # have to remap lzma header format slightly
-        lzma_header = struct.unpack("4s2I5c", data[:17])
-        # b"LZMA" = lzma_header[0]
-        actual_size = lzma_header[1]
-        assert actual_size == lump_header.fourCC
-        # compressed_size = lzma_header[2]
-        properties = b"".join(lzma_header[3:])
-        _filter = lzma._decode_filter_properties(lzma.FILTER_LZMA1, properties)
-        decompressor = lzma.LZMADecompressor(lzma.FORMAT_RAW, None, [_filter])
-        decoded_data = decompressor.decompress(data[17:])
-        decoded_data = decoded_data[:actual_size]  # trim any excess bytes
-        assert len(decoded_data) == actual_size
-        file = io.BytesIO(decoded_data)
-        # HACK: trick BspLump into recognisind the decompressed lump sze
-        LumpHeader = lump_header.__class__  # how2 edit a tuple
-        lump_header_dict = dict(zip(LumpHeader._fields, lump_header))
-        lump_header_dict["offset"] = 0
-        lump_header_dict["length"] = lump_header.fourCC
-        lump_header = LumpHeader(*[lump_header_dict[f] for f in LumpHeader._fields])
+        file = io.BytesIO(decompress_valve_LZMA(data))
+        # modify lump header to point at the decompressed lump (fake file, data starts at offset=0)
+        lump_header.offset = 0
+        lump_header.length = lump_header.fourCC
     return file, lump_header
 
 
-def create_BspLump(file: io.BufferedReader, lump_header: collections.namedtuple, LumpClass: object = None) -> BspLump:
+def create_BspLump(file: io.BufferedReader, lump_header: Any, LumpClass: object = None) -> BspLump:
     if hasattr(lump_header, "fourCC"):
         file, lump_header = decompressed(file, lump_header)
     if not hasattr(lump_header, "filename"):
@@ -80,14 +74,14 @@ def create_BspLump(file: io.BufferedReader, lump_header: collections.namedtuple,
             return ExternalRawBspLump(lump_header)
 
 
-def create_RawBspLump(file: io.BufferedReader, lump_header: collections.namedtuple) -> RawBspLump:
+def create_RawBspLump(file: io.BufferedReader, lump_header: Any) -> RawBspLump:
     if not hasattr(lump_header, "filename"):
         return RawBspLump(file, lump_header)
     else:
         return ExternalRawBspLump(lump_header)
 
 
-def create_BasicBspLump(file: io.BufferedReader, lump_header: collections.namedtuple, LumpClass: object) -> BasicBspLump:  # noqa E502
+def create_BasicBspLump(file: io.BufferedReader, lump_header: Any, LumpClass: object) -> BasicBspLump:
     if hasattr(lump_header, "fourCC"):
         file, lump_header = decompressed(file, lump_header)
     if not hasattr(lump_header, "filename"):
@@ -104,7 +98,7 @@ class RawBspLump:
     # ^ {index: new_byte}
     _length: int  # number of indexable entries
 
-    def __init__(self, file: io.BufferedReader, lump_header: collections.namedtuple):
+    def __init__(self, file: io.BufferedReader, lump_header: Any):
         self.file = file
         self.offset = lump_header.offset
         self._changes = dict()
@@ -166,7 +160,7 @@ class BspLump(RawBspLump):
     _entry_size: int  # sizeof(LumpClass)
     _length: int  # number of indexable entries
 
-    def __init__(self, file: io.BufferedReader, lump_header: collections.namedtuple, LumpClass: object):
+    def __init__(self, file: io.BufferedReader, lump_header: Any, LumpClass: object):
         self.file = file
         self.offset = lump_header.offset
         self._changes = dict()  # changes must be applied externally
@@ -280,7 +274,7 @@ class ExternalRawBspLump(RawBspLump):
     _length: int  # number of indexable entries
     # -- should also override any returned entries with _changes
 
-    def __init__(self, lump_header: collections.namedtuple):
+    def __init__(self, lump_header: Any):
         self.file = open(lump_header.filename, "rb")
         self.offset = 0
         self._changes = dict()  # changes must be applied externally
@@ -299,7 +293,7 @@ class ExternalBspLump(BspLump):
     _entry_size: int  # sizeof(LumpClass)
     _length: int  # number of indexable entries
 
-    def __init__(self, lump_header: collections.namedtuple, LumpClass: object):
+    def __init__(self, lump_header: Any, LumpClass: object):
         super(ExternalBspLump, self).__init__(None, lump_header, LumpClass)
         self.file = open(lump_header.filename, "rb")
         self.offset = 0  # NOTE: 16 if ValveBsp
@@ -315,7 +309,7 @@ class ExternalBasicBspLump(BasicBspLump):
     # ^ {index: LumpClass(new_entry)}
     _length: int  # number of indexable entries
 
-    def __init__(self, lump_header: collections.namedtuple, LumpClass: object):
+    def __init__(self, lump_header: Any, LumpClass: object):
         super(ExternalBasicBspLump, self).__init__(None, lump_header, LumpClass)
         self.file = open(lump_header.filename, "rb")
         self.offset = 0
@@ -323,28 +317,46 @@ class ExternalBasicBspLump(BasicBspLump):
 
 
 class GameLump:
+    endianness: str = "little"
+    GameLumpHeaderClass: Any  # used for reads / writes
+    headers: Dict[str, Any]
+    # ^ {"child_lump": GameLumpHeader}
     is_external = False
     loading_errors: Dict[str, Any]
-    # ^ {"child_lump": Exception}
+    # ^ {"child_lump": Error}
 
-    def __init__(self, file: io.BufferedReader, lump_header: collections.namedtuple,
+    # NOTE: https://github.com/ValveSoftware/source-sdk-2013/blob/master/sp/src/public/gamebspfile.h#L25
+    # -- ^ lists a few possible child lumps:
+    # -- dplh: Detail Prop Lighting HDR
+    # -- dplt: Detail Prop Lighting
+    # -- dprp: Detail Props (procedural grass on displacements)
+    # -- sprp: Static Props
+
+    def __init__(self, file: io.BufferedReader, lump_header: Any, endianness: str,
                  LumpClasses: Dict[str, object], GameLumpHeaderClass: object):
+        self.endianness = endianness
         self.GameLumpHeaderClass = GameLumpHeaderClass
         self.loading_errors = dict()
+        lump_offset = 0
         if not hasattr(lump_header, "filename"):
-            file.seek(lump_header.offset)
+            lump_offset = lump_header.offset
+            file.seek(lump_offset)
         else:
             self.is_external = True
-            file = open(lump_header.filename, "rb")
-        game_lumps_count = int.from_bytes(file.read(4), "little")
+        game_lumps_count = int.from_bytes(file.read(4), self.endianness)
         self.headers = dict()
         # {"child_name": child_header}
         for i in range(game_lumps_count):
-            child_header = GameLumpHeaderClass.from_bytes(file.read(struct.calcsize(GameLumpHeaderClass._format)))
-            # ^ this is why we need a .from_stream() method for SpecialLumpClasses
-            if self.is_external:  # HACK (does this ever happen?)
+            child_header = GameLumpHeaderClass.from_stream(file)
+            if self.is_external:
                 child_header.offset = child_header.offset - lump_header.offset
-            self.headers[child_header.id.decode("ascii")[::-1]] = child_header  # b"prps" -> "sprp"
+            child_name = child_header.id.decode("ascii")
+            if self.endianness == "little":
+                child_name = child_name[::-1]  # "prps" -> "sprp"
+            self.headers[child_name] = child_header
+        # load child lumps (SpecialLumpClasses)
+        # TODO: check for skipped bytes / padding
+        # TODO: defer loading to __getattr__ ?
         for child_name, child_header in self.headers.items():
             child_LumpClass = LumpClasses.get(child_name, dict()).get(child_header.version, None)
             if child_LumpClass is None:
@@ -352,20 +364,33 @@ class GameLump:
             else:
                 file.seek(child_header.offset)
                 try:
-                    child_lump = child_LumpClass(file.read(child_header.length))
+                    child_lump_bytes = file.read(child_header.length)
+                    # check if GameLump child is LZMA compressed (Xbox360)
+                    # -- GameLumpHeader.flags does not appear to inidicate compression
+                    if child_lump_bytes[:4] == b"LZMA":
+                        child_lump_bytes = decompress_valve_LZMA(child_lump_bytes)
+                    child_lump = child_LumpClass(child_lump_bytes)
                 except Exception as exc:
                     self.loading_errors[child_name] = exc
                     child_lump = create_RawBspLump(file, child_header)
+                    # NOTE: RawBspLumps do not decompress
                 setattr(self, child_name, child_lump)
+        if self.is_external:
+            file.close()
 
     def as_bytes(self, lump_offset=0):
         """lump_offset makes headers relative to the file"""
+        # NOTE: ValveBsp .lmp external lumps have a 16 byte header
+        # NOTE: RespawnBsp .bsp_lump offsets are relative to the internal .bsp GAME_LUMP.offset
+        # NOTE: Xbox360 child lumps will not be recompressed
         out = []
-        out.append(len(self.headers).to_bytes(4, "little"))
+        out.append(len(self.headers).to_bytes(4, self.endianness))
         headers = []
         # skip the headers
         cursor_offset = lump_offset + 4 + len(self.headers) * struct.calcsize(self.GameLumpHeaderClass._format)
         # write child lumps
+        # TODO: generate absent headers from lump names
+        # -- this will require an endianness check for header.id
         for child_name, child_header in self.headers.items():
             child_lump = getattr(self, child_name)
             if isinstance(child_lump, RawBspLump):
@@ -379,5 +404,6 @@ class GameLump:
             cursor_offset += child_header.length
             headers.append(child_header)
         # and finally inject the headers back in before "writing"
+        headers = [h.as_bytes() for h in headers]
         out[1:1] = headers
         return b"".join(out)

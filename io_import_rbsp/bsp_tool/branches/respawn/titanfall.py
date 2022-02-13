@@ -1,4 +1,5 @@
 # https://developer.valvesoftware.com/wiki/Source_BSP_File_Format/Game-Specific#Titanfall
+from __future__ import annotations
 import enum
 import io
 import struct
@@ -14,9 +15,10 @@ FILE_MAGIC = b"rBSP"
 
 BSP_VERSION = 29
 
-GAME_PATHS = ["Titanfall", "Titanfall: Online"]
+GAME_PATHS = {"Titanfall": "Titanfall",
+              "Titanfall: Online": "TitanfallOnline"}
 
-GAME_VERSIONS = {"Titanfall": 29, "Titanfall: Online": 29}
+GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -74,7 +76,7 @@ class LUMP(enum.Enum):
     UNUSED_51 = 0x0033
     UNUSED_52 = 0x0034
     UNUSED_53 = 0x0035
-    WORLDLIGHTS = 0x0036
+    WORLD_LIGHTS = 0x0036
     UNUSED_55 = 0x0037
     UNUSED_56 = 0x0038
     UNUSED_57 = 0x0039
@@ -82,7 +84,7 @@ class LUMP(enum.Enum):
     UNUSED_59 = 0x003B
     UNUSED_60 = 0x003C
     UNUSED_61 = 0x003D
-    PHYSICS_LEVEL = 0x003E  # from L4D2 / INFRA ?
+    PHYSICS_LEVEL = 0x003E  # from L4D2 / 2013 Source SDK? (2011: Portal 2)
     UNUSED_63 = 0x003F
     UNUSED_64 = 0x0040
     UNUSED_65 = 0x0041
@@ -122,7 +124,7 @@ class LUMP(enum.Enum):
     CSM_AABB_NODES = 0x0063
     CSM_OBJ_REFERENCES = 0x0064
     LIGHTPROBES = 0x0065
-    STATIC_PROP_LIGHTPROBE_INDEX = 0x0066
+    STATIC_PROP_LIGHTPROBE_INDICES = 0x0066
     LIGHTPROBE_TREE = 0x0067
     LIGHTPROBE_REFERENCES = 0x0068
     LIGHTMAP_DATA_REAL_TIME_LIGHTS = 0x0069
@@ -143,48 +145,59 @@ class LUMP(enum.Enum):
     OBJ_REFERENCES = 0x0078
     OBJ_REFERENCE_BOUNDS = 0x0079
     UNUSED_122 = 0x007A
-    LEVEL_INFO = 0x007B
+    LEVEL_INFO = 0x007B  # PVS related? tied to portals & cells
     SHADOW_MESH_OPAQUE_VERTICES = 0x007C
     SHADOW_MESH_ALPHA_VERTICES = 0x007D
     SHADOW_MESH_INDICES = 0x007E
     SHADOW_MESH_MESHES = 0x007F
 
 
-# struct RespawnBspHeader { char file_magic[4]; int version, revision, lump_count; SourceLumpHeader headers[128]; };
-lump_header_address = {LUMP_ID: (16 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
+LumpHeader = source.LumpHeader
 
 # Rough map of the relationships between lumps:
-
 #              /-> MaterialSort -> TextureData -> TextureDataStringTable -> TextureDataStringData
 # Model -> Mesh -> MeshIndex -\-> VertexReservedX -> Vertex
-#              \-> .flags (VertexReservedX)     \--> VertexNormal
-#                                                \-> .uv
+#             \--> .flags (VertexReservedX)     \--> VertexNormal
+#              \-> VertexReservedX               \-> .uv
 
 # MeshBounds & Mesh are indexed in paralell?
-#
+
 # LeafWaterData -> TextureData -> water material
 # NOTE: LeafWaterData is also used in calculating VPhysics / PHYSICS_COLLIDE
-#
-# ??? -> ShadowMeshIndices -?> ShadowMesh -> ???
+
+# ??? ShadowMesh -?> ShadowMeshIndices -?> ShadowMeshAlphaVertex
+#                                     \-?> ShadowMeshOpaqueVertex
+
 # ??? -> Brush -?> Plane
-#
+
 # LightmapHeader -> LIGHTMAP_DATA_SKY
 #               \-> LIGHTMAP_DATA_REAL_TIME_LIGHTS
-#
+
 # Portal -?> PortalEdge -> PortalVertex
 # PortalEdgeRef -> PortalEdge
 # PortalVertRef -> PortalVertex
 # PortalEdgeIntersect -> PortalEdge?
 #                    \-> PortalVertex
-#
+
 # PortalEdgeIntersectHeader -> ???
 # NOTE: there are always as many intersect headers as edges
 # NOTE: there are also always as many vert refs as edge refs
-#
+
 # CM_GRID probably defines the bounds of CM_GRID_CELLS, with CM_GRID_CELLS indexing other objects?
-#
+# GM_GRID is always 1x 28 byte entry???
+
 # Grid -?> Brush -?> BrushSidePlaneOffset -?> Plane
 # (? * ? + ?) * 4 -> GridCell
+
+
+# engine limits:
+class MAX(enum.Enum):
+    MODELS = 1024
+    TEXTURE_DATA = 2048
+    WORLD_LIGHTS = 4064
+    STATIC_PROPS = 40960
+
+# NOTE: max map coords are -32768 -> 32768 along each axis (Apex is 64Kx64K, double this limit!)
 
 
 # flag enums
@@ -206,7 +219,7 @@ class Flags(enum.IntFlag):
     MASK_VERTEX = 0x600
 
 
-# # classes for lumps, in alphabetical order:
+# classes for lumps, in alphabetical order:
 class Bounds(base.Struct):  # LUMP 88 & 90 (0058 & 005A)
     unknown: List[int]  # shorts seem to work best? doesn't look like AABB bounds?
     __slots__ = ["unknown"]
@@ -232,8 +245,8 @@ https://gdcvault.com/play/1025126/Extreme-SIMD-Optimized-Collision-Detection"""
     b: int
     c: int
     d: int  # always -1?
-    _format = "4h"
     __slots__ = [*"abcd"]
+    _format = "4h"
 
 
 class Cubemap(base.Struct):  # LUMP 42 (002A)
@@ -247,10 +260,12 @@ class Cubemap(base.Struct):  # LUMP 42 (002A)
 # NOTE: only one 28 byte entry per file
 class Grid(base.Struct):  # LUMP 85 (0055)
     scale: float  # scaled against some global vector in engine, I think
+    min_x: int  # *close* to (world_mins * scale) + scale
+    min_y: int  # *close* to (world_mins * scale) + scale
     unknown: List[int]
-    __slots__ = ["scale", "unknown"]
+    __slots__ = ["scale", "min_x", "min_y", "unknown"]
     _format = "f6i"
-    _arrays = {"unknown": 6}
+    _arrays = {"unknown": 4}
 
 
 class LeafWaterData(base.Struct):
@@ -378,21 +393,23 @@ class PortalEdgeIntersectHeader(base.MappedArray):  # LUMP 116 (0074)
 
 
 class ShadowMesh(base.Struct):  # LUMP 127 (007F)
-    start_index: int  # assuming to be like Mesh; unsure what lump is indexed
-    num_triangles: int
-    # unknown.one: int  # usually one
-    # unknown.negative_one: int  # usually negative one
-    __slots__ = ["start_index", "num_triangles", "unknown"]
-    _format = "2I2h"  # assuming 12 bytes
-    _arrays = {"unknown": ["one", "negative_one"]}
+    """SHADOW_MESH_INDICES offset is end of previous ShadowMesh"""
+    vertex_offset: int  # add each index in SHADOW_MESH_INDICES[prev_end:prev_end + num_triangles * 3]
+    num_triangles: int  # number of triangles in SHADOW_MESH_INDICES
+    unknown: List[int]  # [1, -1] or [0, small_int]
+    __slots__ = ["vertex_offset", "num_triangles", "unknown"]
+    _format = "2I2h"
+    _arrays = {"unknown": 2}
 
 
 class ShadowMeshAlphaVertex(base.Struct):  # LUMP 125 (007D)
-    origin: List[float]
-    unknown: List[int]  # unknown[1] might be a float
-    _format = "3f2i"
-    __slots__ = ["origin", "unknown"]
-    _arrays = {"origin": [*"xyz"], "unknown": 2}
+    x: float
+    y: float
+    z: float
+    unknown: List[float]  # both are always from 0.0 -> 1.0 (uvs?)
+    _format = "5f"
+    __slots__ = [*"xyz", "unknown"]
+    _arrays = {"unknown": 2}
 
 
 class StaticPropv12(base.Struct):  # sprp GAME_LUMP (0023)
@@ -404,6 +421,8 @@ class StaticPropv12(base.Struct):  # sprp GAME_LUMP (0023)
     solid_mode: int  # bitflags
     flags: int
     skin: int
+    # NOTE: BobTheBob's definition varies here:
+    # int skin; float fade_min, fade_max; Vector lighting_origin;
     cubemap: int  # index of this StaticProp's Cubemap
     unknown: int
     fade_distance: float
@@ -430,16 +449,30 @@ class TextureData(base.Struct):  # LUMP 2 (0002)
     size: List[int]  # dimensions of full texture
     view: List[int]  # dimensions of visible section of texture
     flags: int  # matches Mesh's .flags; probably from source.TextureInfo
-    __slots__ = ["reflectivity", "name_index", "width", "height",
-                 "view_width", "view_height", "flags"]
+    __slots__ = ["reflectivity", "name_index", "size", "view", "flags"]
     _format = "3f6i"
-    _arrays = {"reflectivity": [*"rgb"], "size": ["width", "height"], "view": ["width", "height"]}
+    _arrays = {"reflectivity": [*"rgb"],
+               "size": ["width", "height"], "view": ["width", "height"]}
 
 
 class TextureVector(base.Struct):  # LUMP 95 (005F)
+    s: List[float]  # S vector
+    t: List[float]  # T vector
     __slots__ = ["s", "t"]
     _format = "8f"
     _arrays = {"s": [*"xyzw"], "t": [*"xyzw"]}
+
+
+class TricollHeader(base.Struct):  # LUMP 69 (0045)
+    __slots__ = ["unknown"]
+    _format = "11i"
+    _arrays = {"unknown": 11}
+
+
+class WorldLight(base.Struct):  # LUMP 54 (0036)
+    __slots__ = ["unknown"]
+    _format = "25I"  # 100 bytes
+    _arrays = {"unknown": 25}
 
 
 # special vertices
@@ -456,49 +489,49 @@ class VertexLitBump(base.Struct):  # LUMP 73 (0049)
     """Common Worldspawn Geometry"""
     position_index: int  # index into Vertex lump
     normal_index: int  # index into VertexNormal lump
-    uv: List[float]  # albedo / normal / gloss / specular uv
-    unused: int  # -1
-    uv2: List[float]  # small 0-1 floats, lightmap uv?
+    uv0: List[float]  # albedo / normal / gloss / specular uv
+    negative_one: int  # -1
+    uv1: List[float]  # small 0-1 floats, lightmap uv?
     unknown: List[int]  # (0, 0, ?, ?)
     # {v[-2:] for v in mp_box.VERTEX_LIT_BUMP}}
     # {x[0] for x in _}.union({x[1] for x in _})  # all numbers
     # for "mp_box": {*range(27)} - {0, 1, 6, 17, 19, 22, 25}
-    __slots__ = ["position_index", "normal_index", "uv", "unknown"]
+    __slots__ = ["position_index", "normal_index", "uv0", "unknown"]
     _format = "2I2fi2f4i"  # 44 bytes
-    _arrays = {"uv": [*"uv"], "unknown": 7}
+    _arrays = {"uv0": [*"uv"], "unknown": 7}
 
 
 class VertexLitFlat(base.Struct):  # LUMP 72 (0048)
     """Uncommon Worldspawn Geometry"""
     position_index: int  # index into Vertex lump
     normal_index: int  # index into VertexNormal lump
-    uv: List[float]  # uv coords
+    uv0: List[float]  # uv coords
     unknown: List[int]
-    __slots__ = ["position_index", "normal_index", "uv", "unknown"]
+    __slots__ = ["position_index", "normal_index", "uv0", "unknown"]
     _format = "2I2f5I"
-    _arrays = {"uv": [*"uv"], "unknown": 5}
+    _arrays = {"uv0": [*"uv"], "unknown": 5}
 
 
 class VertexUnlit(base.Struct):  # LUMP 71 (0047)
     """Tool Brushes"""
     position_index: int  # index into Vertex lump
     normal_index: int  # index into VertexNormal lump
-    uv: List[float]  # uv coords
+    uv0: List[float]  # uv coords
     unknown: int  # usually -1
-    __slots__ = ["position_index", "normal_index", "uv", "unknown"]
+    __slots__ = ["position_index", "normal_index", "uv0", "unknown"]
     _format = "2I2fi"  # 20 bytes
-    _arrays = {"uv": [*"uv"]}
+    _arrays = {"uv0": [*"uv"]}
 
 
 class VertexUnlitTS(base.Struct):  # LUMP 74 (004A)
     """Glass"""
     position_index: int  # index into Vertex lump
     normal_index: int  # index into VertexNormal lump
-    uv: List[float]  # uv coords
+    uv0: List[float]  # uv coords
     unknown: List[int]
-    __slots__ = ["position_index", "normal_index", "uv", "unknown"]
+    __slots__ = ["position_index", "normal_index", "uv0", "unknown"]
     _format = "2I2f3I"  # 28 bytes
-    _arrays = {"uv": [*"uv"], "unknown": 3}
+    _arrays = {"uv0": [*"uv"], "unknown": 3}
 
 
 VertexReservedX = Union[VertexBlinnPhong, VertexLitBump, VertexLitFlat, VertexUnlit, VertexUnlitTS]  # type hint
@@ -506,7 +539,7 @@ VertexReservedX = Union[VertexBlinnPhong, VertexLitBump, VertexLitFlat, VertexUn
 
 # classes for special lumps, in alphabetical order:
 class EntityPartitions(list):
-    """name of each used .ent file"""
+    """name of each used .ent file"""  # [0] = "01*"; .0000.bsp_lump?
     def __init__(self, raw_lump: bytes):
         super().__init__(raw_lump.decode("ascii")[:-1].split(" "))
 
@@ -515,16 +548,16 @@ class EntityPartitions(list):
 
 
 class GameLump_SPRP:
-    """unique to TitanFall"""
-    _static_prop_format: str  # StaticPropClass._format
+    """use `lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropvXX)` to implement"""
+    StaticPropClass: object  # StaticPropv12
     model_names: List[str]
     leaves: List[int]
     unknown_1: int
     unknown_2: int
-    props: List[object]  # List[StaticPropClass]
+    props: List[object] | List[bytes]  # List[StaticPropClass]
 
     def __init__(self, raw_sprp_lump: bytes, StaticPropClass: object):
-        self._static_prop_format = StaticPropClass._format
+        self.StaticPropClass = StaticPropClass
         sprp_lump = io.BytesIO(raw_sprp_lump)
         model_name_count = int.from_bytes(sprp_lump.read(4), "little")
         model_names = struct.iter_unpack("128s", sprp_lump.read(128 * model_name_count))
@@ -534,18 +567,30 @@ class GameLump_SPRP:
         setattr(self, "leaves", leaves)
         prop_count, unknown_1, unknown_2 = struct.unpack("3i", sprp_lump.read(12))
         self.unknown_1, self.unknown_2 = unknown_1, unknown_2
-        # TODO: if StaticPropClass is None: split into appropriate groups of bytes
-        read_size = struct.calcsize(StaticPropClass._format) * prop_count
-        props = struct.iter_unpack(StaticPropClass._format, sprp_lump.read(read_size))
-        setattr(self, "props", list(map(StaticPropClass.from_tuple, props)))
+        if StaticPropClass is not None:
+            read_size = struct.calcsize(StaticPropClass._format) * prop_count
+            props = struct.iter_unpack(StaticPropClass._format, sprp_lump.read(read_size))
+            setattr(self, "props", list(map(StaticPropClass.from_tuple, props)))
+        else:
+            prop_bytes = sprp_lump.read()
+            prop_size = len(prop_bytes) // prop_count
+            # NOTE: will break if prop_size does not divide evenly by prop_count
+            setattr(self, "props", list(struct.iter_unpack(f"{prop_size}s", prop_bytes)))
+        here = sprp_lump.tell()
+        end = sprp_lump.seek(0, 2)
+        assert here == end, "Had some leftover bytes, bad format"
 
     def as_bytes(self) -> bytes:
+        if len(self.props) > 0:
+            prop_bytes = [struct.pack(self.StaticPropClass._format, *p.flat()) for p in self.props]
+        else:
+            prop_bytes = []
         return b"".join([len(self.model_names).to_bytes(4, "little"),
                          *[struct.pack("128s", n.encode("ascii")) for n in self.model_names],
                          len(self.leaves).to_bytes(4, "little"),
                          *[struct.pack("H", L) for L in self.leaves],
                          struct.pack("3I", len(self.props), self.unknown_1, self.unknown_2),
-                         *[struct.pack(self._static_prop_format, *p.flat()) for p in self.props]])
+                         *prop_bytes])
 
 
 # {"LUMP_NAME": {version: LumpClass}}
@@ -571,7 +616,6 @@ LUMP_CLASSES = {"CELLS":                             {0: Cell},
                 "CM_BRUSHES":                        {0: Brush},
                 "CM_BRUSH_TEX_VECS":                 {0: TextureVector},
                 "CM_GEO_SET_BOUNDS":                 {0: Bounds},
-                "CM_GRID":                           {0: Grid},
                 "CM_PRIMITIVE_BOUNDS":               {0: Bounds},
                 "CSM_AABB_NODES":                    {0: Node},
                 "CUBEMAPS":                          {0: Cubemap},
@@ -596,15 +640,18 @@ LUMP_CLASSES = {"CELLS":                             {0: Cell},
                 "SHADOW_MESH_ALPHA_VERTICES":        {0: ShadowMeshAlphaVertex},
                 "SHADOW_MESH_OPAQUE_VERTICES":       {0: quake.Vertex},
                 "TEXTURE_DATA":                      {1: TextureData},
+                "TRICOLL_HEADERS":                   {0: TricollHeader},
                 "VERTEX_NORMALS":                    {0: quake.Vertex},
                 "VERTICES":                          {0: quake.Vertex},
                 "VERTEX_BLINN_PHONG":                {0: VertexBlinnPhong},
                 "VERTEX_LIT_BUMP":                   {1: VertexLitBump},
                 "VERTEX_LIT_FLAT":                   {1: VertexLitFlat},
                 "VERTEX_UNLIT":                      {0: VertexUnlit},
-                "VERTEX_UNLIT_TS":                   {0: VertexUnlitTS}}
+                "VERTEX_UNLIT_TS":                   {0: VertexUnlitTS},
+                "WORLD_LIGHTS":                      {1: WorldLight}}
 
-SPECIAL_LUMP_CLASSES = {"ENTITY_PARTITIONS":         {0: EntityPartitions},
+SPECIAL_LUMP_CLASSES = {"CM_GRID":                   {0: Grid.from_bytes},
+                        "ENTITY_PARTITIONS":         {0: EntityPartitions},
                         "ENTITIES":                  {0: shared.Entities},
                         # NOTE: .ent files are handled directly by the RespawnBsp class
                         "PAKFILE":                   {0: shared.PakFile},
@@ -684,6 +731,32 @@ def search_all_entities(bsp, **search: Dict[str, str]) -> Dict[str, List[Dict[st
     return out
 
 
+def shadow_meshes_as_obj(bsp) -> str:
+    """almost working"""
+    # TODO: figure out how SHADOW_MESH_ALPHA_VERTICES are indexed
+    # TODO: what does ShadowMesh.unknown relate to? alpha indexing?
+    out = [f"# generated with bsp_tool from {bsp.filename}",
+           "# SHADOW_MESH_OPAQUE_VERTICES"]
+    for v in bsp.SHADOW_MESH_OPAQUE_VERTICES:
+        out.append(f"v {v.x} {v.y} {v.z}")
+    if hasattr(bsp, "SHADOW_MESH_ALPHA_VERTICES"):
+        out.append("# SHADOW_MESH_ALPHA_VERTICES")
+        for v in bsp.SHADOW_MESH_ALPHA_VERTICES:
+            out.append(f"v {v.x} {v.y} {v.z}\nvt {v.unknown[0]} {v.unknown[1]}")
+    # TODO: group by ShadowEnvironment if titanfall2
+    end = 0
+    for i, mesh in enumerate(bsp.SHADOW_MESH_MESHES):
+        out.append(f"o mesh_{i}")
+        for j in range(mesh.num_triangles):
+            start = end + j * 3
+            tri = bsp.SHADOW_MESH_INDICES[start:start + 3]
+            assert max(tri) < len(bsp.SHADOW_MESH_OPAQUE_VERTICES)
+            v_tri = [x + 1 + mesh.vertex_offset for x in tri]
+            out.append(f"f {v_tri[0]} {v_tri[1]} {v_tri[2]}")
+        end = start + 3
+    return "\n".join(out)
+
+
 # "debug" methods for investigating the compile process
 def debug_TextureData(bsp):
     print("# TD_index  TD.name  TextureData.flags")
@@ -714,5 +787,5 @@ def debug_Mesh_stats(bsp):
 
 methods = [vertices_of_mesh, vertices_of_model,
            replace_texture, find_mesh_by_texture, get_mesh_texture,
-           search_all_entities, shared.worldspawn_volume,
+           search_all_entities, shared.worldspawn_volume, shadow_meshes_as_obj,
            debug_TextureData, debug_unused_TextureData, debug_Mesh_stats]

@@ -12,14 +12,51 @@ FILE_MAGIC = b"rBSP"
 
 BSP_VERSION = 47
 
-GAME_PATHS = ["Apex Legends"]
+launch = "depot/r5launch/game/r2/maps"
+staging = "depot/r5staging/game/r2/maps"
+r5100 = "depot/r5-100/game/r2/maps"
+r5101 = "depot/r5-101/game/r2/maps"
+r5110 = "depot/r5-110/game/r2/maps"
+r5111 = "depot/r5-111/game/r2/maps"
+
+GAME_PATHS = {"Apex Legends": "ApexLegends/maps",
+              "Apex Legends: Season 2 - Battle Charge": "ApexLegends/season2/maps",
+              "Apex Legends: Season 3 - Meltdown": "ApexLegends/season3/maps",
+              "Apex Legends: Season 3 - Meltdown (launch)": f"ApexLegends/season3/{launch}",
+              "Apex Legends: Season 3 - Meltdown (staging)": f"ApexLegends/season3/{staging}",
+              "Apex Legends: Season 3 - Meltdown [30 Oct Patch]": "ApexLegends/season3_30oct19/maps",
+              "Apex Legends: Season 3 - Meltdown [30 Oct Patch] (launch)": f"ApexLegends/season3_30oct19/{launch}",
+              "Apex Legends: Season 3 - Meltdown [30 Oct Patch] (staging)": f"ApexLegends/season3_30oct19/{staging}",
+              "Apex Legends: Season 3 - Meltdown [3 Dec Patch]": "ApexLegends/season3_3dec19/maps",
+              "Apex Legends: Season 3 - Meltdown [3 Dec Patch] (launch)": f"ApexLegends/season3_3dec19/{launch}",
+              "Apex Legends: Season 3 - Meltdown [3 Dec Patch] (staging)": f"ApexLegends/season3_3dec19/{staging}",
+              "Apex Legends: Season 5 - Fortune's Favor": "ApexLegends/season5/maps",
+              "Apex Legends: Season 8 - Mayhem": "ApexLegends/season8/maps",
+              "Apex Legends: Season 9 - Legacy": "ApexLegends/season9/maps",
+              "Apex Legends: Season 10 - Emergence [3 Aug Patch]": "ApexLegends/season10_3aug21/maps/",
+              "Apex Legends: Season 10 - Emergence [10 Aug Patch]": "ApexLegends/season10_10aug21/maps/",
+              "Apex Legends: Season 10 - Emergence [10 Aug Patch] (100)": f"ApexLegends/season10_10aug21/{r5100}",
+              "Apex Legends: Season 10 - Emergence [14 Sep Patch]": "ApexLegends/season10_14sep21/maps/",
+              "Apex Legends: Season 10 - Emergence [14 Sep Patch] (100)": f"ApexLegends/season10_14sep21/{r5100}",
+              "Apex Legends: Season 10 - Emergence [14 Sep Patch] (101)": f"ApexLegends/season10_14sep21/{r5101}",
+              "Apex Legends: Season 10 - Emergence [24 Sep Patch]": "ApexLegends/season10_24sep21/maps/",
+              "Apex Legends: Season 10 - Emergence [24 Sep Patch] (100)": f"ApexLegends/season10_24sep21/{r5100}",
+              "Apex Legends: Season 10 - Emergence [24 Sep Patch] (101)": f"ApexLegends/season10_24sep21/{r5101}",
+              "Apex Legends: Season 11 - Escape": "ApexLegends/season11/maps",
+              "Apex Legends: Season 11 - Escape (110)": f"ApexLegends/season11/{r5110}",
+              "Apex Legends: Season 11 - Escape [6 Nov Patch]": "ApexLegends/season11_6nov21/maps",
+              "Apex Legends: Season 11 - Escape [6 Nov Patch] (110)": f"ApexLegends/season11_6nov21/{r5110}",
+              "Apex Legends: Season 11 - Escape [19 Nov Patch]": "ApexLegends/season11_19nov21/maps",
+              "Apex Legends: Season 11 - Escape [19 Nov Patch] (110)": f"ApexLegends/season11_19nov21/{r5110}",
+              "Apex Legends: Season 11 - Escape [19 Nov Patch] (111)": f"ApexLegends/season11_19nov21/{r5111}"}
 
 GAME_VERSIONS = {"Apex Legends": 47,
                  "Apex Legends: Season 7 - Ascension": 48,  # Olympus
                  "Apex Legends: Season 8 - Mayhem": 49,  # King's Canyon map update 3
                  "Apex Legends: Season 10 - Emergence": 50,  # Arenas: Encore / SkyGarden
-                 "Apex Legends: Season 11 - Escape": 65586}  # Nov19th patch version(50, 1) & all data in .bsp_lump
-# NOTE: ^ (maps in depot/ still contain many lumps in the .bsp, as before)
+                 "Apex Legends: Season 11 - Escape [19 Nov Patch] (110)": 49,
+                 "Apex Legends: Season 11 - Escape [19 Nov Patch] (111)": (49, 1),
+                 "Apex Legends: Season 11 - Escape [19 Nov Patch]": (50, 1)}
 
 
 class LUMP(enum.Enum):
@@ -39,7 +76,7 @@ class LUMP(enum.Enum):
     UNUSED_13 = 0x000D
     MODELS = 0x000E
     SURFACE_NAMES = 0x000F
-    CONTENT_MASKS = 0x0010
+    CONTENTS_MASKS = 0x0010
     SURFACE_PROPERTIES = 0x0011
     BVH_NODES = 0x0012
     BVH_LEAF_DATA = 0x0013
@@ -61,7 +98,7 @@ class LUMP(enum.Enum):
     GAME_LUMP = 0x0023
     UNUSED_36 = 0x0024
     UNKNOWN_37 = 0x0025  # connected to VIS lumps
-    UNKNOWN_38 = 0x0026
+    UNKNOWN_38 = 0x0026  # connected to CSM lumps
     UNKNOWN_39 = 0x0027  # connected to VIS lumps
     PAKFILE = 0x0028  # zip file, contains cubemaps
     UNUSED_41 = 0x0029
@@ -77,8 +114,8 @@ class LUMP(enum.Enum):
     UNUSED_51 = 0x0033
     UNUSED_52 = 0x0034
     UNUSED_53 = 0x0035
-    WORLDLIGHTS = 0x0036
-    WORLDLIGHTS_PARENT_INFO = 0x0037
+    WORLD_LIGHTS = 0x0036
+    WORLD_LIGHT_PARENT_INFOS = 0x0037
     UNUSED_56 = 0x0038
     UNUSED_57 = 0x0039
     UNUSED_58 = 0x003A
@@ -108,7 +145,7 @@ class LUMP(enum.Enum):
     MATERIAL_SORT = 0x0052
     LIGHTMAP_HEADERS = 0x0053
     UNUSED_84 = 0x0054
-    CM_GRID = 0x0055
+    TWEAK_LIGHTS = 0x0055
     UNUSED_86 = 0x0056
     UNUSED_87 = 0x0057
     UNUSED_88 = 0x0058
@@ -125,7 +162,7 @@ class LUMP(enum.Enum):
     CSM_AABB_NODES = 0x0063
     CSM_OBJ_REFERENCES = 0x0064
     LIGHTPROBES = 0x0065
-    STATIC_PROP_LIGHTPROBE_INDEX = 0x0066
+    STATIC_PROP_LIGHTPROBE_INDICES = 0x0066
     LIGHTPROBE_TREE = 0x0067
     LIGHTPROBE_REFERENCES = 0x0068
     LIGHTMAP_DATA_REAL_TIME_LIGHTS = 0x0069
@@ -153,13 +190,13 @@ class LUMP(enum.Enum):
     SHADOW_MESH_MESHES = 0x007F
 
 
-# struct RespawnBspHeader { char file_magic[4]; int version, revision, lump_count; SourceLumpHeader headers[128]; };
-lump_header_address = {LUMP_ID: (16 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
+LumpHeader = source.LumpHeader
+
 
 # Known lump changes from Titanfall 2 -> Apex Legends:
 # New:
 #   UNUSED_15 -> SURFACE_NAMES
-#   UNUSED_16 -> CONTENT_MASKS
+#   UNUSED_16 -> CONTENTS_MASKS
 #   UNUSED_17 -> SURFACE_PROPERTIES
 #   UNUSED_18 -> BVH_NODES
 #   UNUSED_19 -> BVH_LEAF_DATA
@@ -167,6 +204,7 @@ lump_header_address = {LUMP_ID: (16 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
 #   UNUSED_37 -> UNKNOWN_37
 #   UNUSED_38 -> UNKNOWN_38
 #   UNUSED_39 -> UNKNOWN_39
+#   CM_GRID -> TWEAK_LIGHTS
 #   TEXTURE_DATA_STRING_DATA -> UNKNOWN_43
 #   TRICOLL_BEVEL_INDICES -> UNKNOWN_97
 # Deprecated:
@@ -195,27 +233,36 @@ lump_header_address = {LUMP_ID: (16 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
 # Model -> Mesh -> MaterialSort -> TextureData -> SurfaceName
 #                             \--> VertexReservedX
 #                              \-> MeshIndex?
-#
+
 # MeshBounds & Mesh (must have equal number of each)
-#
+# CM_GRID is linked to mesh bounds?
+
 # VertexReservedX -> Vertex
 #                \-> VertexNormal
-#
+
 # ??? -> ShadowMeshIndices -?> ShadowMesh -> ???
 # ??? -> Brush -?> Plane
-#
+
 # LightmapHeader -> LIGHTMAP_DATA_SKY
 #               \-> LIGHTMAP_DATA_REAL_TIME_LIGHTS
-#
+
 # Portal -?> PortalEdge -> PortalVertex
 # PortalEdgeRef -> PortalEdge
 # PortalVertRef -> PortalVertex
 # PortalEdgeIntersect -> PortalEdge?
 #                    \-> PortalVertex
-#
+
 # PortalEdgeIntersectHeader -> ???
 # NOTE: there are always as many intersect headers as edges
 # NOTE: there are also always as many vert refs as edge refs
+
+# collision: ???
+#   CONTENTS_MASKS  # Extreme SIMD?
+#   SURFACE_PROPERTIES  # $surfaceprop etc.
+#   BVH_NODES = 0x0012  # BVH4 collision tree
+#   BVH_LEAF_DATA = 0x0013  # parallel w/ content masks & nodes?
+
+# PACKED_VERTICES is parallel with VERTICES?
 
 
 # classes for lumps, in alphabetical order:
@@ -240,8 +287,8 @@ class Mesh(base.Struct):  # LUMP 80 (0050)
     material_sort: int  # index of this Mesh's MaterialSort
     flags: int  # Flags(mesh.flags & Flags.MASK_VERTEX).name == "VERTEX_RESERVED_X"
     __slots__ = ["first_mesh_index", "num_triangles", "unknown", "material_sort", "flags"]
-    _format = "IH3ihHI"  # 28 bytes
-    _arrays = {"unknown": 4}
+    _format = "IHh3ihHI"  # 28 bytes
+    _arrays = {"unknown": 5}
 
 
 class Model(base.Struct):  # LUMP 14 (000E)
@@ -298,9 +345,9 @@ class VertexLitBump(base.Struct):  # LUMP 73 (0049)
     negative_one: int  # -1
     uv1: List[float]  # lightmap coords
     colour: List[int]
-    __slots__ = ["position_index", "normal_index", "uv0", "negative_one", "uv1"]
-    _format = "2I2fi3f"  # 32 bytes
-    _arrays = {"uv0": [*"uv"], "colour": [*"rgba"]}
+    __slots__ = ["position_index", "normal_index", "uv0", "negative_one", "uv1", "colour"]
+    _format = "2I2fi2f4B"  # 32 bytes
+    _arrays = {"uv0": [*"uv"], "uv1": [*"uv"], "colour": [*"rgba"]}
 
 
 class VertexLitFlat(base.Struct):  # LUMP 72 (0048)
@@ -342,7 +389,6 @@ def ApexSPRP(raw_lump):
 BASIC_LUMP_CLASSES = titanfall2.BASIC_LUMP_CLASSES.copy()
 
 LUMP_CLASSES = titanfall2.LUMP_CLASSES.copy()
-LUMP_CLASSES.pop("CM_GRID")
 LUMP_CLASSES.update({"LIGHTMAP_HEADERS":    {0: titanfall.LightmapHeader},
                      "MATERIAL_SORT":       {0: MaterialSort},
                      "MESHES":              {0: Mesh},
@@ -358,6 +404,7 @@ LUMP_CLASSES.update({"LIGHTMAP_HEADERS":    {0: titanfall.LightmapHeader},
                      "VERTEX_UNLIT_TS":     {0: VertexUnlitTS}})
 
 SPECIAL_LUMP_CLASSES = titanfall2.SPECIAL_LUMP_CLASSES.copy()
+SPECIAL_LUMP_CLASSES.pop("CM_GRID")
 SPECIAL_LUMP_CLASSES.pop("TEXTURE_DATA_STRING_DATA")
 SPECIAL_LUMP_CLASSES.update({"SURFACE_NAMES": {0: shared.TextureDataStringData}})
 
@@ -409,5 +456,6 @@ def debug_Mesh_stats(bsp):
 
 methods = [titanfall.vertices_of_mesh, titanfall.vertices_of_model,
            titanfall.search_all_entities, shared.worldspawn_volume,
+           titanfall.shadow_meshes_as_obj,
            get_TextureData_SurfaceName, get_Mesh_SurfaceName,
            debug_TextureData, debug_unused_SurfaceNames, debug_Mesh_stats]

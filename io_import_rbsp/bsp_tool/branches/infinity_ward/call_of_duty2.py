@@ -14,9 +14,9 @@ FILE_MAGIC = b"IBSP"
 
 BSP_VERSION = 4
 
-GAME_PATHS = ["Call of Duty 2"]
+GAME_PATHS = {"Call of Duty 2": "Call of Duty 2"}
 
-GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
+GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -62,8 +62,7 @@ class LUMP(enum.Enum):
     LIGHTS = 39
 
 
-# struct InfinityWardBspHeader { char file_magic[4]; int version; QuakeLumpHeader headers[32]; };
-lump_header_address = {LUMP_ID: (8 + i * 8) for i, LUMP_ID in enumerate(LUMP)}
+LumpHeader = call_of_duty1.LumpHeader
 
 # Known lump changes from Call of Duty -> Call of Duty 2:
 # New:

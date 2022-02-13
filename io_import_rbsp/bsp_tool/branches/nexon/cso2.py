@@ -1,21 +1,20 @@
 """2013-2017 format"""
 # https://git.sr.ht/~leite/cso2-bsp-converter/tree/master/item/src/bsptypes.hpp
-import collections
 import enum
 import io
-import struct
 import zipfile
 
+from .. import base
 from . import vindictus
 
 
 FILE_MAGIC = b"VBSP"
 
-BSP_VERSION = 100  # 1.00?
+BSP_VERSION = 100
 
-GAME_PATHS = ["Counter-Strike: Online 2"]
+GAME_PATHS = {"Counter-Strike: Online 2": "CSO2"}
 
-GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
+GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -80,25 +79,19 @@ class LUMP(enum.Enum):
     FACES_HDR = 58
     MAP_FLAGS = 59
     OVERLAY_FADES = 60
-    UNKNOWN_61 = 61  # version 1
+    UNKNOWN_61 = 61  # version 1; related to cubemaps?
     UNUSED_62 = 62
     UNUSED_63 = 63
 
 
-# struct CSO2BspHeader { char file_magic[4]; int version; CSO2LumpHeader headers[64]; int revision; };
-lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
-
-CSO2LumpHeader = collections.namedtuple("CSO2LumpHeader", ["offset", "length", "version", "compressed", "fourCC"])
-# NOTE: looking at headers, a half int of value 0x0001 seemed attached to version seemed to make sense
-
-
-def read_lump_header(file, LUMP: enum.Enum) -> CSO2LumpHeader:
-    file.seek(lump_header_address[LUMP])
-    offset, length, version, compressed = struct.unpack("2I2H", file.read(12))
-    fourCC = int.from_bytes(file.read(4), "big")  # fourCC is big endian for some reason
-    header = CSO2LumpHeader(offset, length, version, bool(compressed), fourCC)
-    return header
-# NOTE: lump header formats could easily be a:  LumpClass(base.Struct)
+class LumpHeader(base.MappedArray):
+    offset: int  # index in .bsp file where lump begins
+    length: int
+    version: int
+    compressed: int  # 2 byte bool?
+    fourCC: int  # uncompressed size (big endian for some reason)
+    _mapping = ["offset", "length", "version", "compressed", "fourCC"]
+    _format = "2I2HI"
 
 
 # classes for each lump, in alphabetical order:

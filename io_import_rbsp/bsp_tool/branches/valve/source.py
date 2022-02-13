@@ -1,4 +1,8 @@
-import collections
+# https://developer.valvesoftware.com/wiki/Source_BSP_File_Format
+# https://github.com/ValveSoftware/source-sdk-2013/blob/master/sp/src/public/bspfile.h
+# https://github.com/ValveSoftware/source-sdk-2013/blob/master/sp/src/public/bspflags.h
+# https://github.com/ValveSoftware/source-sdk-2013/blob/master/sp/src/public/bsplib.cpp
+from __future__ import annotations
 import enum
 import io
 import itertools
@@ -13,14 +17,14 @@ from ..id_software import quake
 
 FILE_MAGIC = b"VBSP"
 
-BSP_VERSION = 19  # & 20
+BSP_VERSION = 19
 
-GAME_PATHS = ["counter-strike source/cstrike",  # Counter-Strike: Source
-              "Half-Life 1 Source Deathmatch/hl1mp",  # Half-Life 1: Source - Deathmatch
-              "Half-Life 2/hl2",  # Half-Life 2
-              "Half-Life 2/episodic"]  # Half-Life 2: Episode 1
+GAME_PATHS = {"Counter-Strike: Source": "counter-strike source/cstrike",
+              "Half-Life Deathmatch: Source": "Half-Life 1 Source Deathmatch/hl1mp",
+              "Half-Life 2": "Half-Life 2/hl2",
+              "Half-Life 2: Episode 1": "half-life 2/episodic"}
 
-GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
+GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
 
 class LUMP(enum.Enum):
@@ -75,8 +79,8 @@ class LUMP(enum.Enum):
     DISPLACEMENT_TRIS = 48
     PHYSICS_COLLIDE_SURFACE = 49  # deprecated / X360 ?
     WATER_OVERLAYS = 50  # deprecated / X360 ?
-    LIGHTMAP_PAGES = 51
-    LIGHTMAP_PAGE_INFOS = 52
+    LEAF_AMBIENT_INDEX_HDR = 51
+    LEAF_AMBIENT_INDEX = 52
     LIGHTING_HDR = 53  # version 1
     WORLD_LIGHTS_HDR = 54
     LEAF_AMBIENT_LIGHTING_HDR = 55  # version 1
@@ -90,27 +94,23 @@ class LUMP(enum.Enum):
     UNUSED_63 = 63
 
 
-# struct SourceBspHeader { char file_magic[4]; int version; SourceLumpHeader headers[64]; int revision; };
-lump_header_address = {LUMP_ID: (8 + i * 16) for i, LUMP_ID in enumerate(LUMP)}
-
-SourceLumpHeader = collections.namedtuple("SourceLumpHeader", ["offset", "length", "version", "fourCC"])
-
-
-def read_lump_header(file, LUMP: enum.Enum) -> SourceLumpHeader:
-    file.seek(lump_header_address[LUMP])
-    offset, length, version, fourCC = struct.unpack("4I", file.read(16))
-    header = SourceLumpHeader(offset, length, version, fourCC)
-    return header
+class LumpHeader(base.MappedArray):
+    _mapping = ["offset", "length", "version", "fourCC"]
+    _format = "4I"
 
 # TODO: changes from GoldSrc -> Source
 # MipTexture.flags -> TextureInfo.flags (Surface enum)
 
-# a rough map of the relationships between lumps:
-#
+# A rough map of the relationships between lumps:
+
 #                     /-> SurfEdge -> Edge -> Vertex
 # Leaf -> Node -> Face -> Plane
 #                     \-> DisplacementInfo -> DisplacementVertex
-#
+
+# Leaf is Parallel with LeafAmbientIndex
+
+# LeafAmbientIndex -> LeafAmbientSample
+
 # ClipPortalVertices are AreaPortal geometry [citation neeeded]
 
 
@@ -429,7 +429,25 @@ class Face(base.Struct):  # LUMP 7
     _arrays = {"styles": 4, "lightmap": {"mins": [*"xy"], "size": ["width", "height"]}}
 
 
-class LeafWaterData(base.Struct):
+class LeafAmbientIndex(base.MappedArray):  # LUMP 52
+    num_samples: int
+    first_sample: int
+    _format = "2h"
+    _mapping = ["num_samples", "first_sample"]
+
+
+class LeafAmbientSample(base.MappedArray):  # LUMP 56
+    """cube of lighting samples"""
+    cube: List[List[int]]  # unsure about orientation / face order
+    vector: List[int]
+    padding: int
+    __slots__ = ["cube", "vector", "padding"]
+    _format = "28B"
+    _arrays = {"cube": {f: [*"rgbe"] for f in "ABCDEF"},  # integer keys in _mapping would be nicer
+               "vector": [*"xyz"]}
+
+
+class LeafWaterData(base.MappedArray):  # LUMP 36
     surface_z: float  # global Z height of the water's surface
     min_z: float  # bottom of the water volume?
     texture_data: int  # index to this LeafWaterData's TextureData
@@ -467,10 +485,36 @@ class Node(base.Struct):  # LUMP 5
     _arrays = {"children": 2, "mins": [*"xyz"], "maxs": [*"xyz"]}
 
 
+class Overlay(base.Struct):  # LUMP 45
+    id: int
+    texture_info: int
+    face_count: int  # render order in top 2 bits
+    faces: List[int]
+    uv: List[float]  # uncertain of order
+    points: List[List[float]]
+    origin: List[float]
+    normal: List[float]
+    __slots__ = ["id", "texture_info", "face_count", "faces",
+                 "uv", "points", "origin", "normal"]
+    _format = "i2h64i22f"
+    _arrays = {"faces": 64, "uv": ["left", "right", "top", "bottom"],
+               "points": {P: [*"xyz"] for P in "ABCD"}}
+
+
 class OverlayFade(base.MappedArray):  # LUMP 60
     """Holds fade distances for the overlay of the same index"""
     _mapping = ["min", "max"]
     _format = "2f"
+
+
+class Primitive(base.MappedArray):  # LUMP 37
+    type: int
+    first_index: int  # index into PrimitiveIndex lump
+    num_indices: int
+    first_vertex: int  # index into PrimitiveVertices lump
+    num_vertices: int
+    _mapping = ["type", "first_index", "num_indices", "first_vertex", "num_vertices"]
+    _format = "B4H"
 
 
 class TextureData(base.Struct):  # LUMP 2
@@ -495,6 +539,22 @@ class TextureInfo(base.Struct):  # LUMP 6
     _arrays = {"texture": {"s": [*"xyz", "offset"], "t": [*"xyz", "offset"]},
                "lightmap": {"s": [*"xyz", "offset"], "t": [*"xyz", "offset"]}}
     # ^ nested MappedArrays; texture.s.x, texture.t.x
+
+
+class WaterOverlay(base.Struct):  # LUMP 50
+    id: int
+    texture_info: int
+    face_count: int  # render order in top 2 bits
+    faces: List[int]
+    uv: List[float]  # uncertain of order
+    points: List[List[float]]
+    origin: List[float]
+    normal: List[float]
+    __slots__ = ["id", "texture_info", "face_count", "faces",
+                 "uv", "points", "origin", "normal"]
+    _format = "i2h256i22f"
+    _arrays = {"faces": 256, "uv": ["left", "right", "top", "bottom"],
+               "points": {P: [*"xyz"] for P in "ABCD"}}
 
 
 class WorldLight(base.Struct):  # LUMP 15
@@ -529,7 +589,13 @@ class WorldLight(base.Struct):  # LUMP 15
 # special lump classes, in alphabetical order:
 class GameLumpHeader(base.MappedArray):
     id: str
-    flags: int
+    # NOTE: https://github.com/ValveSoftware/source-sdk-2013/blob/master/sp/src/public/gamebspfile.h#L25
+    # -- ^ lists a few possible child lumps:
+    # -- dplh: Detail Prop Lighting HDR
+    # -- dplt: Detail Prop Lighting
+    # -- dprp: Detail Props (procedural grass on displacements)
+    # -- sprp: Static Props
+    flags: int  # use unknown
     version: int
     offset: int
     length: int
@@ -538,9 +604,13 @@ class GameLumpHeader(base.MappedArray):
 
 
 class GameLump_SPRP:
+    """use `lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropvXX)` to implement"""
+    StaticPropClass: object  # StaticPropvX
+    model_names: List[str]
+    leaves: List[int]
+    props: List[object] | List[bytes]  # List[StaticPropClass]
+
     def __init__(self, raw_sprp_lump: bytes, StaticPropClass: object):
-        """Get StaticPropClass from GameLump version"""
-        # lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropvXX)
         sprp_lump = io.BytesIO(raw_sprp_lump)
         model_name_count = int.from_bytes(sprp_lump.read(4), "little")
         model_names = struct.iter_unpack("128s", sprp_lump.read(128 * model_name_count))
@@ -549,32 +619,39 @@ class GameLump_SPRP:
         leaves = itertools.chain(*struct.iter_unpack("H", sprp_lump.read(2 * leaf_count)))
         setattr(self, "leaves", list(leaves))
         prop_count = int.from_bytes(sprp_lump.read(4), "little")
-        # TODO: if StaticPropClass is None: split into appropriate groups of bytes
-        read_size = struct.calcsize(StaticPropClass._format) * prop_count
-        props = struct.iter_unpack(StaticPropClass._format, sprp_lump.read(read_size))
-        setattr(self, "props", list(map(StaticPropClass.from_tuple, props)))
+        if StaticPropClass is None:
+            raw_props = sprp_lump.read()
+            prop_size = len(raw_props) // prop_count
+            props = list()
+            for i in range(prop_count):
+                props.append(raw_props[i * prop_size:(i + 1) * prop_size])
+            setattr(self, "props", props)
+        else:
+            read_size = struct.calcsize(StaticPropClass._format) * prop_count
+            props = struct.iter_unpack(StaticPropClass._format, sprp_lump.read(read_size))
+            setattr(self, "props", list(map(StaticPropClass.from_tuple, props)))
         here = sprp_lump.tell()
         end = sprp_lump.seek(0, 2)
-        assert here == end, "Had some leftover bytes, bad format"
+        assert here == end, "Had some leftover bytes; StaticPropClass._format is incorrect!"
 
     def as_bytes(self) -> bytes:
         if len(self.props) > 0:
-            prop_format = self.props[0]._format
+            prop_bytes = [struct.pack(self.StaticPropClass._format, *p.flat()) for p in self.props]
         else:
-            prop_format = ""
+            prop_bytes = []
         return b"".join([int.to_bytes(len(self.model_names), 4, "little"),
                          *[struct.pack("128s", n) for n in self.model_names],
                          int.to_bytes(len(self.leaves), 4, "little"),
                          *[struct.pack("H", L) for L in self.leaves],
                          int.to_bytes(len(self.props), 4, "little"),
-                         *[struct.pack(prop_format, *p.flat()) for p in self.props]])
+                         *prop_bytes])
 
 
 class StaticPropv4(base.Struct):  # sprp GAME LUMP (LUMP 35)
     """https://github.com/ValveSoftware/source-sdk-2013/blob/master/sp/src/public/gamebspfile.h#L151"""
     origin: List[float]  # origin.xyz
     angles: List[float]  # origin.yzx  QAngle; Z0 = East
-    name_index: int  # index into GAME_LUMP.sprp.model_names
+    model_name: int  # index into GAME_LUMP.sprp.model_names
     first_leaf: int  # index into Leaf lump
     num_leafs: int  # number of Leafs after first_leaf this StaticPropv10 is in
     solid_mode: int  # collision flags enum
@@ -593,7 +670,7 @@ class StaticPropv5(base.Struct):  # sprp GAME LUMP (LUMP 35) [version 5]
     """https://github.com/ValveSoftware/source-sdk-2013/blob/master/sp/src/public/gamebspfile.h#L168"""
     origin: List[float]  # origin.xyz
     angles: List[float]  # origin.yzx  QAngle; Z0 = East
-    name_index: int  # index into GAME_LUMP.sprp.model_names
+    model_name: int  # index into GAME_LUMP.sprp.model_names
     first_leaf: int  # index into Leaf lump
     num_leafs: int  # number of Leafs after first_leaf this StaticPropv10 is in
     solid_mode: int  # collision flags enum
@@ -614,7 +691,7 @@ class StaticPropv6(base.Struct):  # sprp GAME LUMP (LUMP 35) [version 6]
     """https://github.com/ValveSoftware/source-sdk-2013/blob/master/sp/src/public/gamebspfile.h#L186"""
     origin: List[float]  # origin.xyz
     angles: List[float]  # origin.yzx  QAngle; Z0 = East
-    name_index: int  # index into GAME_LUMP.sprp.model_names
+    model_name: int  # index into GAME_LUMP.sprp.model_names
     first_leaf: int  # index into Leaf lump
     num_leafs: int  # number of Leafs after first_leaf this StaticPropv10 is in
     solid_mode: int  # collision flags enum
@@ -634,32 +711,44 @@ class StaticPropv6(base.Struct):  # sprp GAME LUMP (LUMP 35) [version 6]
 
 # {"LUMP_NAME": {version: LumpClass}}
 BASIC_LUMP_CLASSES = {"DISPLACEMENT_TRIS":         {0: shared.UnsignedShorts},
+                      "FACE_MACRO_TEXTURE_INFO":   {0: shared.Shorts},
                       "LEAF_BRUSHES":              {0: shared.UnsignedShorts},
                       "LEAF_FACES":                {0: shared.UnsignedShorts},
+                      "PRIMITIVE_INDICES":         {0: shared.UnsignedShorts},
                       "SURFEDGES":                 {0: shared.Ints},
-                      "TEXTURE_DATA_STRING_TABLE": {0: shared.UnsignedShorts}}
+                      "TEXTURE_DATA_STRING_TABLE": {0: shared.UnsignedShorts},
+                      "VERTEX_NORMAL_INDICES":     {0: shared.UnsignedShorts}}
 
-LUMP_CLASSES = {"AREAS":                 {0: Area},
-                "AREA_PORTALS":          {0: AreaPortal},
-                "BRUSHES":               {0: Brush},
-                "BRUSH_SIDES":           {0: BrushSide},
-                "CUBEMAPS":              {0: Cubemap},
-                "DISPLACEMENT_INFO":     {0: DisplacementInfo},
-                "DISPLACEMENT_VERTICES": {0: DisplacementVertex},
-                "EDGES":                 {0: quake.Edge},
-                "FACES":                 {1: Face},
-                "LEAF_WATER_DATA":       {0: LeafWaterData},
-                "MODELS":                {0: Model},
-                "NODES":                 {0: Node},
-                "OVERLAY_FADES":         {0: OverlayFade},
-                "ORIGINAL_FACES":        {0: Face},
-                "PLANES":                {0: quake.Plane},
-                "TEXTURE_DATA":          {0: TextureData},
-                "TEXTURE_INFO":          {0: TextureInfo},
-                "VERTICES":              {0: quake.Vertex},
-                "VERTEX_NORMALS":        {0: quake.Vertex},
-                "WORLD_LIGHTS":          {0: WorldLight},
-                "WORLD_LIGHTS_HDR":      {0: WorldLight}}
+LUMP_CLASSES = {"AREAS":                     {0: Area},
+                "AREA_PORTALS":              {0: AreaPortal},
+                "BRUSHES":                   {0: Brush},
+                "BRUSH_SIDES":               {0: BrushSide},
+                "CLIP_PORTAL_VERTICES":      {0: quake.Vertex},
+                "CUBEMAPS":                  {0: Cubemap},
+                "DISPLACEMENT_INFO":         {0: DisplacementInfo},
+                "DISPLACEMENT_VERTICES":     {0: DisplacementVertex},
+                "EDGES":                     {0: quake.Edge},
+                "FACES":                     {1: Face},
+                "LEAF_AMBIENT_INDEX":        {0: LeafAmbientIndex},
+                "LEAF_AMBIENT_INDEX_HDR":    {0: LeafAmbientIndex},
+                "LEAF_AMBIENT_LIGHTING":     {1: LeafAmbientSample},
+                "LEAF_AMBIENT_LIGHTING_HDR": {1: LeafAmbientSample},
+                "LEAF_WATER_DATA":           {0: LeafWaterData},
+                "MODELS":                    {0: Model},
+                "NODES":                     {0: Node},
+                "OVERLAY":                   {0: Overlay},
+                "OVERLAY_FADES":             {0: OverlayFade},
+                "ORIGINAL_FACES":            {0: Face},
+                "PLANES":                    {0: quake.Plane},
+                "PRIMITIVES":                {0: Primitive},
+                "PRIMITIVE_VERTICES":        {0: quake.Vertex},
+                "TEXTURE_DATA":              {0: TextureData},
+                "TEXTURE_INFO":              {0: TextureInfo},
+                "VERTICES":                  {0: quake.Vertex},
+                "VERTEX_NORMALS":            {0: quake.Vertex},
+                "WATER_OVERLAYS":            {0: WaterOverlay},
+                "WORLD_LIGHTS":              {0: WorldLight},
+                "WORLD_LIGHTS_HDR":          {0: WorldLight}}
 
 SPECIAL_LUMP_CLASSES = {"ENTITIES":                 {0: shared.Entities},
                         "TEXTURE_DATA_STRING_DATA": {0: shared.TextureDataStringData},
@@ -673,6 +762,8 @@ GAME_LUMP_HEADER = GameLumpHeader
 GAME_LUMP_CLASSES = {"sprp": {4: lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropv4),
                               5: lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropv5),
                               6: lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropv6)}}
+# TODO: more GameLump definitions:
+# -- https://github.com/ValveSoftware/source-sdk-2013/blob/master/sp/src/public/gamebspfile.h#L25
 
 
 # branch exclusive methods, in alphabetical order:

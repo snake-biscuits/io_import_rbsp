@@ -5,16 +5,15 @@ FILE_MAGIC = None
 
 BSP_VERSION = 29
 
-GAME_PATHS = ["Hexen 2"]
+GAME_PATHS = {"Hexen II": "Hexen 2"}
 
-GAME_VERSIONS = {GAME_PATH: BSP_VERSION for GAME_PATH in GAME_PATHS}
+GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
 
 LUMP = quake.LUMP
 
 
-# struct QuakeBspHeader { int version; QuakeLumpHeader headers[15]; };
-lump_header_address = {LUMP_ID: (4 + i * 8) for i, LUMP_ID in enumerate(LUMP)}
+LumpHeader = quake.LumpHeader
 
 
 BASIC_LUMP_CLASSES = quake.BASIC_LUMP_CLASSES.copy()
