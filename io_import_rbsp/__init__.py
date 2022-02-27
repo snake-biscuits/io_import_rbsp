@@ -36,6 +36,9 @@ class ImportRBSP(Operator, ImportHelper):
                                default="Brushes")  # noqa F722
     # TODO: load_prop_dynamic EnumProperty: None, Empties, Low-Poly, High-Poly
     # TODO: load_prop_static EnumProperty: None, Empties, Low-Poly, High-Poly, Skybox Only
+    # -- https://gist.github.com/warmist/c9efdd4d84f8f97aff806fdbb3853ac8
+    # -- ^ physics models (rotation yet to be completed)
+    # TODO: adapt warmist's .phy converter to tackle the .bsp PHYSICS_COLLIDE lump
     load_props: EnumProperty(name="Props", description="Load smaller models",  # noqa F722
                              items=(("None", "No Props", "Decent performance"),  # noqa F722
                                     ("Empties", "Use Empties", "Place empties at prop origins"),  # noqa F722

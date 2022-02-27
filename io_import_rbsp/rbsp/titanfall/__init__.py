@@ -13,6 +13,8 @@ def geometry(bsp, master_collection: bpy.types.Collection, materials: List[bpy.t
     geometry_collection = bpy.data.collections.new("geometry")
     master_collection.children.link(geometry_collection)
     # load_model
+    # TODO: create sub-collections for `model #0`
+    # -- mesh.flags: skybox & transparent
     for model_index, model in enumerate(bsp.MODELS):
         model_collection = bpy.data.collections.new(f"model #{model_index}")
         geometry_collection.children.link(model_collection)
