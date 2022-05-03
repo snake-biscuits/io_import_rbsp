@@ -28,6 +28,8 @@ bsp = bsp_tool.load_bsp(TITANFALL_ONLINE + "mp_box.bsp")
 #              \-> .flags (VertexReservedX)       \--> VertexNormal
 #                                                  \-> .uv
 
+# MeshBounds is paralell to Meshes (same length, data linked by index)
+
 obj = bpy.context.selected_objects[0]
 # ENTITIES:
 entity = dict(classname="func_brush",
@@ -114,6 +116,9 @@ for obj in bpy.context.selected_objects:
                           material_sort=len(bsp.MATERIAL_SORT) - 1,
                           flags=titanfall.Flags.VERTEX_UNLIT)
     bsp.MESHES.append(mesh)
+    
+    # TODO: mesh_bounds = titanfall.MeshBounds(...)
+    # TODO: bsp.MESH_BOUNDS.append(mesh_bounds)
 
     bsp.MESH_INDICES.extend(mesh_indices)
 
