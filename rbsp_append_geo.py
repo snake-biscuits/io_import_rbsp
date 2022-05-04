@@ -123,8 +123,7 @@ for obj in bpy.context.selected_objects:
     mesh_maxs = mathutils.Vector(obj.bound_box[-2][::])  # X+ Y+ Z+
     mesh_center = [(M - m) / 2 for m, M in zip(mesh_mins, mesh_maxs)]
     mesh_extents = [abs(o - p) for o, p in zip(mesh_center, mesh_mins)]
-    # NOTE: both mesh_center & _extents are List[mathutils.Vector]
-    mesh_bounds = titanfall.MeshBounds(mesh_center, 1.0, mesh_extents, 0)
+    mesh_bounds = titanfall.MeshBounds(mesh_center, mesh_extents.magnitude + 0.001, mesh_extents, 0)
     bsp.MESH_BOUNDS.append(mesh_bounds)
 
     # offset indices to tail of target vertex lump
