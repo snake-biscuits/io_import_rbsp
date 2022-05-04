@@ -4,6 +4,7 @@ import sys
 from typing import List
 
 import bpy
+import mathutils
 
 sys.path.insert(0, "C:/Users/Jared/Documents/GitHub/bsp_tool")
 import bsp_tool  # noqa E402
@@ -89,8 +90,8 @@ for obj in bpy.context.selected_objects:
     bsp.VERTEX_NORMALS.extend([VertexNormal(*n) for n in normals])
     del raw_normals, normals, VertexNormal
 
-    special_vertices: List[titanfall.VertexReservedX] = list()
-    # [VertexReservedX(position_index, normal_index, *uv, ...)]
+    special_vertices = list()
+    # ^ [(position_index, normal_index, uv), ...]
     mesh_indices: List[int] = list()
 
     # https://docs.blender.org/api/current/bpy.types.Mesh.html
@@ -116,11 +117,19 @@ for obj in bpy.context.selected_objects:
                           material_sort=len(bsp.MATERIAL_SORT) - 1,
                           flags=titanfall.Flags.VERTEX_UNLIT)
     bsp.MESHES.append(mesh)
-    
-    # TODO: mesh_bounds = titanfall.MeshBounds(...)
-    # TODO: bsp.MESH_BOUNDS.append(mesh_bounds)
 
-    bsp.MESH_INDICES.extend(mesh_indices)
+    # NOTE: obj.bound_box contains 8 vertices, rather than direct mins & maxs
+    mesh_mins = mathutils.Vector(obj.bound_box[0][::])   # X- Y- Z-
+    mesh_maxs = mathutils.Vector(obj.bound_box[-2][::])  # X+ Y+ Z+
+    mesh_center = [(M - m) / 2 for m, M in zip(mesh_mins, mesh_maxs)]
+    mesh_extents = [abs(o - p) for o, p in zip(mesh_center, mesh_mins)]
+    # NOTE: both mesh_center & _extents are List[mathutils.Vector]
+    mesh_bounds = titanfall.MeshBounds(mesh_center, 1.0, mesh_extents, 0)
+    bsp.MESH_BOUNDS.append(mesh_bounds)
+
+    # offset indices to tail of target vertex lump
+    # might be able to achieve the same with material_sort, maybe
+    bsp.MESH_INDICES.extend([i + len(bsp.VERTEX_UNLIT) for i in mesh_indices])
 
     # bsp.VERTEX_LIT_BUMP.extend([r1.VertexLitBump(*v, -1, (0.0, 0.0), (0, 0, 2, 9)) for v in special_vertices])
     # NOTE: crunching all uv2 to 1 point could be bad,
@@ -128,5 +137,6 @@ for obj in bpy.context.selected_objects:
     bsp.VERTEX_UNLIT.extend([titanfall.VertexUnlit(*v, -1) for v in special_vertices])
 
 
+# mounting onto TF:O for testing
 bsp.save_as("E:/Mod/TitanfallOnline/TitanFallOnline/Data/r1/maps/mp_box.bsp")
 print("Write complete")
