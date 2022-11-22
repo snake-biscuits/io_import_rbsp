@@ -13,6 +13,8 @@ FILE_MAGIC = b"VBSP"
 BSP_VERSION = 20
 
 GAME_PATHS = {"Day of Defeat: Source": "day of defeat source/dod",
+              "Entropy: Zero 2": "EntropyZero2/entropyzero2",
+              "E.Y.E: Divine Cybermancy": "EYE Divine Cybermancy/EYE",
               "G-String": "G String/gstringv2",
               "Garry's Mod": "GarrysMod/garrysmod",
               "Half-Life 2: Episode 2": "half-life 2/ep2",
@@ -87,7 +89,7 @@ class LUMP(enum.Enum):
     MAP_FLAGS = 59
     OVERLAY_FADES = 60
     UNUSED_61 = 61
-    UNUSED_62 = 62
+    PHYSICS_LEVEL = 62  # used by orange_box_x360 for L4D2 maps
     UNUSED_63 = 63
 
 
@@ -103,15 +105,11 @@ LumpHeader = source.LumpHeader
 
 
 # classes for each lump, in alphabetical order:
-class Leaf(base.Struct):  # LUMP 10
+class Leaf(source.Leaf):  # LUMP 10  (v1)
     """Endpoint of a vis tree branch, a pocket of Faces"""
-    contents: int  # contents bitflags
-    cluster: int   # index of this Leaf's cluster (parent node?) (visibility?)
-    area_flags: int  # area + flags (short area:9; short flags:7;)
-    # area and flags are held in the same float
-    # area = leaf[2] & 0xFF80 >> 7 # 9 bits
-    # flags = leaf[2] & 0x007F # 7 bits
-    # TODO: automatically split area & flags, merging back for flat()
+    contents: int  # see Contents flags
+    cluster: int   # index of this Leaf's viscluster (leaf group in VISIBILITY lump)
+    area_flags: int  # area & flags bitfield (short area:9; short flags:7;)
     # why was this done when the struct is padded by one short anyway?
     mins: List[float]  # bounding box minimums along XYZ axes
     maxs: List[float]  # bounding box maximums along XYZ axes
@@ -124,8 +122,10 @@ class Leaf(base.Struct):  # LUMP 10
     __slots__ = ["contents", "cluster", "area_flags", "mins", "maxs",
                  "first_leaf_face", "num_leaf_faces", "first_leaf_brush",
                  "num_leaf_brushes", "leaf_water_data_id", "padding"]
-    _format = "i8h4H2h"
+    _format = "i2H6h4H2h"
     _arrays = {"mins": [*"xyz"], "maxs": [*"xyz"]}
+    _bitfields = {"area_flags": {"area": 9, "flags": 7}}
+    _classes = {"contents": source.Contents}
 
 
 # classes for special lumps, in alphabetical order:
@@ -145,12 +145,12 @@ class PhysicsDisplacement(list):  # LUMP 28
         return b"".join(count, *sizes, *self)
 
 
-class StaticPropv10(base.Struct):  # sprp GAME LUMP (LUMP 35)
+class StaticPropv10(base.Struct):  # sprp GAME LUMP (LUMP 35) [version 7* / 10]
     origin: List[float]  # origin.xyz
     angles: List[float]  # origin.yzx  QAngle; Z0 = East
     model_name: int  # index into AME_LUMP.sprp.model_names
     first_leaf: int  # index into Leaf lump
-    num_leafs: int  # number of Leafs after first_leaf this StaticPropv10 is in
+    num_leafs: int  # number of Leafs after first_leaf this StaticProp is in
     solid_mode: int  # collision flags enum
     skin: int  # index of this StaticProp's skin in the .mdl
     fade_distance: List[float]  # min & max distances to fade out
@@ -174,7 +174,7 @@ BASIC_LUMP_CLASSES = source.BASIC_LUMP_CLASSES.copy()
 LUMP_CLASSES = source.LUMP_CLASSES.copy()
 LUMP_CLASSES.pop("LEAF_AMBIENT_LIGHTING")
 LUMP_CLASSES.pop("LEAF_AMBIENT_LIGHTING_HDR")
-LUMP_CLASSES.update({"LEAVES": {1: Leaf}})
+LUMP_CLASSES["LEAVES"] = {**source.LUMP_CLASSES["LEAVES"], 1: Leaf}
 
 SPECIAL_LUMP_CLASSES = source.SPECIAL_LUMP_CLASSES.copy()
 
@@ -182,9 +182,9 @@ SPECIAL_LUMP_CLASSES = source.SPECIAL_LUMP_CLASSES.copy()
 GAME_LUMP_HEADER = source.GAME_LUMP_HEADER
 
 # {"lump": {version: SpecialLumpClass}}
-GAME_LUMP_CLASSES = source.GAME_LUMP_CLASSES.copy()
+GAME_LUMP_CLASSES = {"sprp": source.GAME_LUMP_CLASSES["sprp"].copy()}
 GAME_LUMP_CLASSES["sprp"].update({7: lambda raw_lump: source.GameLump_SPRP(raw_lump, StaticPropv10),  # 7*
-                                 10: lambda raw_lump: source.GameLump_SPRP(raw_lump, StaticPropv10)})
+                                 10: lambda raw_lump: source.GameLump_SPRP(raw_lump, None)})  # tiny sample breaking?
 
 
 methods = [*source.methods]

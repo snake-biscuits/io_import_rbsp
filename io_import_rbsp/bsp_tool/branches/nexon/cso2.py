@@ -5,6 +5,7 @@ import io
 import zipfile
 
 from .. import base
+from ..valve import source
 from . import vindictus
 
 
@@ -124,16 +125,21 @@ LUMP_CLASSES = vindictus.LUMP_CLASSES.copy()
 LUMP_CLASSES.pop("BRUSH_SIDES")
 LUMP_CLASSES.pop("CUBEMAPS")
 LUMP_CLASSES.pop("DISPLACEMENT_INFO")
+LUMP_CLASSES.pop("FACES")
 LUMP_CLASSES.pop("LEAVES")
 LUMP_CLASSES.pop("ORIGINAL_FACES")
 LUMP_CLASSES.pop("OVERLAYS")
+LUMP_CLASSES.pop("TEXTURE_INFO")
+LUMP_CLASSES.pop("WORLD_LIGHTS")
+LUMP_CLASSES.pop("WORLD_LIGHTS_HDR")
 
 SPECIAL_LUMP_CLASSES = vindictus.SPECIAL_LUMP_CLASSES.copy()
 SPECIAL_LUMP_CLASSES.pop("PAKFILE")
 
+GAME_LUMP_HEADER = source.GameLumpHeader
 
-# NOTE: GameLump is busted atm?
-GAME_LUMP_CLASSES = vindictus.GAME_LUMP_CLASSES.copy()
+# {"lump": {version: SpecialLumpClass}}
+GAME_LUMP_CLASSES = dict()
 
 
 methods = [*vindictus.methods]

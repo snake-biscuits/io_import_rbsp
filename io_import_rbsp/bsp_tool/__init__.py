@@ -1,8 +1,7 @@
 """A library for .bsp file analysis & modification"""
-__all__ = ["base", "branches", "load_bsp", "lumps", "tools",
-           "D3DBsp", "GoldSrcBsp", "IdTechBsp", "InfinityWardBsp",
-           "QuakeBsp", "RavenBsp", "RespawnBsp", "RitualBsp", "ValveBsp"]
-__version__ = "v0.3.1 commit da2734e"
+__all__ = ["base", "branches", "load_bsp", "lumps", "D3DBsp", "FusionBsp",
+           "GoldSrcBsp", "IdTechBsp", "InfinityWardBsp", "QuakeBsp", "RavenBsp",
+           "ReMakeQuakeBsp", "RespawnBsp", "RitualBsp", "ValveBsp"]
 
 import os
 from types import ModuleType
@@ -10,8 +9,8 @@ from types import ModuleType
 from . import base  # base.Bsp base class
 from . import branches  # all known .bsp variant definitions
 from . import lumps
-from .id_software import QuakeBsp, IdTechBsp
-from .infinity_ward import InfinityWardBsp, D3DBsp
+from .id_software import FusionBsp, IdTechBsp, QuakeBsp, ReMakeQuakeBsp
+from .infinity_ward import D3DBsp, InfinityWardBsp
 from .raven import RavenBsp
 from .respawn import RespawnBsp
 from .ritual import RitualBsp
@@ -19,8 +18,12 @@ from .valve import GoldSrcBsp, ValveBsp
 
 
 BspVariant_from_file_magic = {b"2015": RitualBsp,
+                              b"2PSB": ReMakeQuakeBsp,
+                              b"BSP2": ReMakeQuakeBsp,
+                              b"EALA": RitualBsp,
                               b"EF2!": RitualBsp,
                               b"FAKK": RitualBsp,
+                              b"FBSP": FusionBsp,
                               b"IBSP": IdTechBsp,  # + InfinityWardBsp + D3DBsp
                               b"PSBr": RespawnBsp,  # Xbox360
                               b"PSBV": ValveBsp,  # Xbox360
@@ -53,11 +56,16 @@ def load_bsp(filename: str, branch_script: ModuleType = None) -> base.Bsp:
     # parse header
     with open(filename, "rb") as bsp_file:
         file_magic = bsp_file.read(4)
-        if file_magic in (b"PSBr", b"PSBV"):
+        if file_magic in (b"2PSB", b"BSP2"):
+            version = None
+        # elif file_magic == b"BSP2":
+        #     return ReMakeQuakeBsp(branches.id_software.remake_quake, filename)
+        # endianness
+        elif file_magic in (b"PSBr", b"PSBV"):  # big endian
             version = int.from_bytes(bsp_file.read(4), "big")
         else:
             version = int.from_bytes(bsp_file.read(4), "little")
-        if version > 0xFFFF:
+        if version is not None and version > 0xFFFF:  # 2 part version
             version = (version & 0xFFFF, version >> 16)  # major, minor
     # identify BspVariant
     if filename.lower().endswith(".d3dbsp"):  # CoD2 & CoD4
@@ -76,10 +84,6 @@ def load_bsp(filename: str, branch_script: ModuleType = None) -> base.Bsp:
             elif version in GoldSrc_versions:
                 BspVariant = GoldSrcBsp
                 file_magic = None
-            elif file_magic == b"BSP2":
-                raise NotImplementedError("BSP2 format is not yet supported")
-            elif file_magic == b"FBSP":
-                raise NotImplementedError("FBSP format is not yet supported")
             else:
                 # TODO: check for encrypted Tactical Intervention .bsp
                 raise NotImplementedError(f"Unknown file_magic: {file_magic}")
@@ -96,3 +100,10 @@ def load_bsp(filename: str, branch_script: ModuleType = None) -> base.Bsp:
     if branch_script is None:
         branch_script = branches.script_from_file_magic_and_version[(file_magic, version)]
     return BspVariant(branch_script, filename, autoload=True)  # might raise errors
+
+
+# TODO: write a generator that walks a path for .bsps, including inside .pk3, .bz2, .iwd & .zip
+# -- this should greatly simplify testing theories / support against whole games
+# TODO: allow loading .bsp files from bytestreams
+# -- base.Bsp @classmethod .from_stream(stream: bytes | io.BytesIO) alternate __init__?
+# -- requires faking both self.folder (need to hook to some ZipFile method) & overriding self.file

@@ -85,7 +85,10 @@ LumpHeader = call_of_duty1.LumpHeader
 #   LIGHT_INDICES
 #   COLLISION_INDICES
 
-# TODO: a rough map of the relationships between lumps:
+# a rough map of the relationships between lumps:
+#      /-> Brush
+# Model -> Mesh        /-> Vertex
+#      \-> TriangleSoup -> Triangle -?> Vertex
 
 
 # flag enums
@@ -194,6 +197,7 @@ BASIC_LUMP_CLASSES = call_of_duty1.BASIC_LUMP_CLASSES.copy()
 
 LUMP_CLASSES = call_of_duty1.LUMP_CLASSES.copy()
 LUMP_CLASSES.pop("LIGHTMAPS")  # 4 MB per lightmap?
+LUMP_CLASSES.pop("LIGHTS")
 LUMP_CLASSES.update({"LIGHT_GRID_HASH": quake3.LightVolume,
                      "PORTAL_VERTICES": quake.Vertex,
                      "TRIANGLES":       Triangle,

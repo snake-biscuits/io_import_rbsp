@@ -1,11 +1,13 @@
 # https://www.mralligator.com/q3/
 # https://github.com/zturtleman/spearmint/blob/master/code/qcommon/bsp_q3.c
+# https://github.com/id-Software/Quake-III-Arena/blob/master/code/qcommon/qfiles.h
 import enum
 from typing import List
 import struct
 
 from .. import base
 from .. import shared
+from .. import vector
 from .. id_software import quake
 
 
@@ -13,35 +15,39 @@ FILE_MAGIC = b"IBSP"
 
 BSP_VERSION = 46
 
-GAME_PATHS = {"Quake 3 Arena": "Quake 3 Arena",
+GAME_PATHS = {"Quake III Arena": "Quake 3 Arena",  # NOTE: includes "Quake III: Team Arena"
               "Quake Live": "Quake Live",
-              "Return to Castle Wolfenstein": "realRTCW",  # steam release
+              "Return to Castle Wolfenstein": "realRTCW",  # Steam release (community made afaik)
               "Wolfenstein: Enemy Territory": "Wolfenstein - Enemy Territory",
+              "WRATH: Aeon of Ruin": "WRATH",
               "Dark Salvation": "Dark Salvation"}  # https://mangledeyestudios.itch.io/dark-salvation
+# TODO: see where Xonotic & Nexuiz Classic fit in
 
-GAME_VERSIONS = {"Quake 3 Arena": 46, "Quake Live": 46,
-                 "Return to Castle Wolfenstein": 47,
-                 "Wolfenstein Enemy Territory": 47,
+GAME_VERSIONS = {"Quake III Arena": 46, "Quake Live": 46, "WRATH: Aeon of Ruin": 46,
+                 "Return to Castle Wolfenstein": 47, "Wolfenstein Enemy Territory": 47,
                  "Dark Salvation": 666}
+# NOTE: id-Software/Quake-III-Arena/q3radiant/BSPFILE.H uses BSPVERSION 34
+# NOTE: id-Software/Quake-III-Arena/q3radiant/QFILES.H uses BSPVERSION 36
 
 
+# NOTE: based on mralligator's lump names, Q3 source code names are in comments
 class LUMP(enum.Enum):
-    ENTITIES = 0  # one long string
-    TEXTURES = 1
+    ENTITIES = 0
+    TEXTURES = 1  # SHADERS
     PLANES = 2
     NODES = 3
     LEAVES = 4
-    LEAF_FACES = 5
+    LEAF_FACES = 5  # LEAFSURFACES
     LEAF_BRUSHES = 6
     MODELS = 7
     BRUSHES = 8
     BRUSH_SIDES = 9
-    VERTICES = 10
-    MESH_VERTICES = 11
-    EFFECTS = 12
-    FACES = 13
-    LIGHTMAPS = 14  # 3 128x128 RGB888 images
-    LIGHT_VOLUMES = 15
+    VERTICES = 10  # DRAWVERTS
+    MESH_VERTICES = 11  # DRAWINDICES
+    EFFECTS = 12  # FOGS
+    FACES = 13  # SURFACES
+    LIGHTMAPS = 14  # 3x 128x128px RGB888 images
+    LIGHT_VOLUMES = 15  # LIGHTGRID
     VISIBILITY = 16
 
 
@@ -110,10 +116,10 @@ class BrushSide(base.Struct):  # LUMP 9
 
 
 class Effect(base.Struct):  # LUMP 12
-    name: str
+    shader_name: str
     brush: int  # index into Brush lump
-    unknown: int  # Always 5, except in q3dm8, which has one effect with -1
-    __slots__ = ["name", "brush", "unknown"]
+    visible_side: int  # side of brush to clip ray tests against (-1 = None)
+    __slots__ = ["shader_name", "brush", "visible_side"]
     _format = "64s2i"
 
 
@@ -126,18 +132,22 @@ class Face(base.Struct):  # LUMP 13
     first_mesh_vertex: int  # index into MeshVertex lump
     num_mesh_vertices: int  # number of MeshVertices after first_mesh_vertex in this face
     # lightmap.index: int  # which of the 3 lightmap textures to use
-    # lightmap.top_left: List[int]  # approximate top-left corner of visible lightmap segment
-    # lightmap.size: List[int]  # size of visible lightmap segment
-    # lightmap.origin: List[float]  # world space lightmap origin
-    # lightmap.vector: List[List[float]]  # lightmap texture projection vectors
-    normal: List[float]
-    patch: List[float]  # for patches (displacement-like)
+    # lightmap.top_left: vector.vec2  # approximate top-left corner of visible lightmap segment
+    # lightmap.size: vector.vec2  # size of visible lightmap segment
+    # lightmap.origin: vector.vec3  # world space lightmap origin
+    # lightmap.vector: List[vector.vec3]  # lightmap texture projection vectors
+    normal: vector.vec3
+    patch: vector.vec2  # for patches (displacement-like)
     __slots__ = ["texture", "effect", "surface_type", "first_vertex", "num_vertices",
-                 "first_mesh_vertex", "num_mesh_vertices", "lightmap", "normal", "size"]
+                 "first_mesh_vertex", "num_mesh_vertices", "lightmap", "normal", "patch"]
     _format = "12i12f2i"
     _arrays = {"lightmap": {"index": None, "top_left": [*"xy"], "size": ["width", "height"],
                             "origin": [*"xyz"], "vector": {"s": [*"xyz"], "t": [*"xyz"]}},
                "normal": [*"xyz"], "patch": ["width", "height"]}
+    _classes = {"surface_type": SurfaceType, "lightmap.top_left": vector.vec2,
+                "lightmap.size": vector.renamed_vec2("width", "height"), "lightmap.origin": vector.vec3,
+                "lightmap.vector.s": vector.vec3, "lightmap.vector.t": vector.vec3, "normal": vector.vec3,
+                "patch": vector.vec2}
 
 
 class Leaf(base.Struct):  # LUMP 4
@@ -160,11 +170,14 @@ class Lightmap(list):  # LUMP 14
     _pixels: List[bytes] = [b"\0" * 3] * 128 * 128
     _format = "3s" * 128 * 128  # 128x128 RGB_888
 
-    def __getitem__(self, row) -> List[bytes]:  # returns 3 bytes: b"\xRR\xGG\xBB"
+    def __getitem__(self, row) -> List[bytes]:
         # Lightmap[row][column] returns self.__getitem__(row)[column]
         # to get a specific pixel: self._pixels[index]
-        row_start = row * 512
-        return self._pixels[row_start:row_start + 512]  # TEST: does it work with negative indices?
+        row_start = row * 128
+        return self._pixels[row_start:row_start + 128]  # TEST: does it work with negative indices?
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} 128x128px RGB_888>"
 
     def flat(self) -> bytes:
         return b"".join(self._pixels)
@@ -235,17 +248,42 @@ class Vertex(base.Struct):  # LUMP 10
 
 
 # special lump classes, in alphabetical order:
-class Visibility:  # same as Quake / QuakeII?
-    """Cluster X is visible from Cluster Y if:
+class Visibility(list):
+    """Cluster A is visible from Cluster B if bit B of Visibility[A] is set
     bit (1 << Y % 8) of vecs[X * vector_size + Y // 8] is set
     NOTE: Clusters are associated with Leaves"""
-    def __init__(self, raw_visiblity: bytes):
-        self.vector_count, self.vector_size = struct.unpack("2i", raw_visiblity[:8])
-        self.vectors = struct.unpack(f"{self.vector_count * self.vector_size}B", raw_visiblity[8:])
+    vectors: List[bytes]
+    # TODO: detect fast vis / leaked
+    # NOTE: tests/mp_lobby.bsp  {*Visibility} == {(2 ** len(Visibility) - 1).to_bytes(len(Visibility), "little")}
 
-    def as_bytes(self):
-        vectors_bytes = f"{self.vector_count * self.vector_size}B"
-        return struct.pack(f"2i{vectors_bytes}", (self.vector_count, self.vector_size, *self.vectors))
+    def __init__(self, raw_visibility: bytes = None):
+        if raw_visibility is None:
+            return super().__init__()  # create empty visibility lump
+            # NOTE: to function correctly, the visibility lump must have max(LEAVES.cluster) entries
+        vec_n, vec_sz = struct.unpack("2i", raw_visibility[:8])
+        assert len(raw_visibility) - 8 == vec_n * vec_sz, "lump size does not match internal header"
+        # we could check if vec_sz is the smallest it could be here...
+        return super().__init__([raw_visibility[8:][i:i + vec_sz] for i in range(0, vec_n * vec_sz, vec_sz)])
+
+    def as_bytes(self, compress=False):
+        # default behaviour should be to match input bytes; hence compress=False
+        # TODO: verify "compression" does not break maps
+        # lazy method
+        vec_n = len(self)
+        vec_sz = len(self[0])  # assumption! verified later
+        best_vec_sz = vec_n // 8 + (1 if vec_n % 8 else 0)
+        if vec_sz >= best_vec_sz and compress is False:
+            assert len({len(v) for v in self}) == 1, "not all vectors are the same size"
+            return struct.pack(f"2i{vec_n * vec_sz}s", vec_n, vec_sz, b"".join(self))
+        # robust method (compresses)
+        vecs = b""
+        for vec in self:
+            if len(vec) > best_vec_sz:
+                vec = vec[:best_vec_sz]  # unsure if safe
+            elif len(vec) < best_vec_sz:
+                vec += b"\0" * (best_vec_sz - len(vec))
+            vecs += vec
+        return struct.pack(f"2i{vec_n * best_vec_sz}s", vec_n, best_vec_sz, vecs)
 
 
 BASIC_LUMP_CLASSES = {"LEAF_BRUSHES":  shared.Ints,

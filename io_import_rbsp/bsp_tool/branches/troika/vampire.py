@@ -56,13 +56,14 @@ BASIC_LUMP_CLASSES = source.BASIC_LUMP_CLASSES.copy()
 LUMP_CLASSES = source.LUMP_CLASSES.copy()
 LUMP_CLASSES.update({"FACES":          {0: Face},
                      "ORIGINAL_FACES": {0: Face}})
+LUMP_CLASSES.pop("LEAVES")
 
 SPECIAL_LUMP_CLASSES = source.SPECIAL_LUMP_CLASSES.copy()
 SPECIAL_LUMP_CLASSES.pop("PHYSICS_COLLIDE")  # interesting, is .phy different?
 
 GAME_LUMP_HEADER = source.GameLumpHeader
 
-GAME_LUMP_CLASSES = source.GAME_LUMP_CLASSES.copy()
+GAME_LUMP_CLASSES = {"sprp": source.GAME_LUMP_CLASSES["sprp"].copy()}
 
 
 methods = [*source.methods]

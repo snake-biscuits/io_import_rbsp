@@ -9,12 +9,16 @@ from typing import List
 
 from .. import base
 from .. import shared
-from ..valve import orange_box, source
+from ..id_software import quake
+from ..valve import orange_box
+from ..valve import source
 
 
 FILE_MAGIC = b"VBSP"
 
 BSP_VERSION = 20
+# NOTE: Vindictus may have 2 format eras with identical version identifiers
+# -- we currently do not know how to load / find a map in-game to test for outdated maps
 
 GAME_PATHS = {"Vindictus": "Vindictus"}
 
@@ -88,17 +92,10 @@ class LUMP(enum.Enum):
     UNUSED_63 = 63
 
 
-class LumpHeader(base.MappedArray):
-    id: int  # lump index?
-    offset: int  # index in .bsp file where lump begins
-    length: int
-    version: int
-    fourCC: int  # uncompressed size (big endian for some reason)
-    _mapping = ["id", "flags", "version", "offset", "length"]
-    _format = "5I"
+LumpHeader = source.LumpHeader
 
 
-# class for each lump in alphabetical order: [10 / 64] + orange_box.LUMP_CLASSES
+# class for each lump in alphabetical order:
 class Area(base.Struct):  # LUMP 20
     num_area_portals: int  # number or AreaPortals after first_area_portal in this Area
     first_area_portal: int  # index into AreaPortal lump
@@ -143,15 +140,8 @@ class DisplacementInfo(source.DisplacementInfo):  # LUMP 26
                "corner_neighbours": 72, "allowed_verts": 10}
 
 
-class Edge(list):  # LUMP 12
-    _format = "2I"
-
-    def flat(self):
-        return self  # HACK
-
-    @classmethod
-    def from_tuple(cls, _tuple):
-        return cls(_tuple)
+class Edge(quake.Edge):  # LUMP 12
+    _format = "2I"  # increased from uint16_t to uint32_t
 
 
 class Face(base.Struct):  # LUMP 7
@@ -314,8 +304,8 @@ class StaticPropScale(base.MappedArray):
 
 # {"LUMP_NAME": {version: LumpClass}}
 BASIC_LUMP_CLASSES = orange_box.BASIC_LUMP_CLASSES.copy()
-BASIC_LUMP_CLASSES.update({"LEAF_BRUSHES": {0: shared.UnsignedInts},
-                           "LEAF_FACES":   {0: shared.UnsignedInts}})
+BASIC_LUMP_CLASSES.update({"LEAF_BRUSHES":              {0: shared.UnsignedInts},
+                           "LEAF_FACES":                {0: shared.UnsignedInts}})
 
 LUMP_CLASSES = orange_box.LUMP_CLASSES.copy()
 LUMP_CLASSES.update({"AREAS":             {0: Area},
@@ -325,7 +315,7 @@ LUMP_CLASSES.update({"AREAS":             {0: Area},
                      "EDGES":             {0: Edge},
                      "FACES":             {1: Face,
                                            2: Facev2},
-                     "LEAVES":            {0: Leaf},
+                     "LEAVES":            {1: Leaf},
                      "NODES":             {0: Node},
                      "ORIGINAL_FACES":    {1: Face,
                                            2: Facev2},
@@ -333,11 +323,13 @@ LUMP_CLASSES.update({"AREAS":             {0: Area},
 
 SPECIAL_LUMP_CLASSES = orange_box.SPECIAL_LUMP_CLASSES.copy()
 
-GAME_LUMP_HEADER = source.GameLumpHeader
+GAME_LUMP_HEADER = GameLumpHeader
 
 # {"lump": {version: SpecialLumpClass}}
-GAME_LUMP_CLASSES = orange_box.GAME_LUMP_CLASSES.copy()
-GAME_LUMP_CLASSES.update({"sprp": {6: lambda raw_lump: GameLump_SPRP(raw_lump, source.StaticPropv6)}})
+GAME_LUMP_CLASSES = {"sprp": orange_box.GAME_LUMP_CLASSES["sprp"].copy()}
+GAME_LUMP_CLASSES.update({"sprp": {6: lambda raw_lump: GameLump_SPRP(raw_lump, None)}})
+# NOTE: 281 / 474 maps fail to load with this format
+# -- older maps? nexon often updates formats without changing version numbers...
 
 
 methods = [*orange_box.methods]

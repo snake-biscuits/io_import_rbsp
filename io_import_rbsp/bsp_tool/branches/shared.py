@@ -1,7 +1,6 @@
 import io
 import math
 import re
-import struct
 import zipfile
 from typing import Dict, List
 
@@ -35,6 +34,10 @@ class UnsignedInts(int):
     _format = "I"
 
 
+class UnsignedShort:  # enum.IntFlag base class
+    _format = "H"
+
+
 class UnsignedShorts(int):
     _format = "H"
 
@@ -57,13 +60,17 @@ class Entities(list):
             elif '"' in line:
                 key_value_pair = re.search(r'"([^"]*)"\s"([^"]*)"', line)
                 if not key_value_pair:
+                    # TODO: "key" 'value"
+                    # NOTE: DDayNormany-mappack mtownbh L18 opens w/ `'` & closes w/ `"`
+                    # -- this seems illegal but the map runs without complaint
+                    # multi-line value
                     open_key_value_pair = re.search(r'"([^"]*)"\s"([^"]*)', line)
-                    if not open_key_value_pair:
-                        RuntimeError(f"Unexpected line in entities: L{line_no}: {line.encode()}")
+                    if open_key_value_pair is None:
+                        raise RuntimeError(f"Unexpected line in entities: L{line_no}: {line.encode()}")
                     key, value = open_key_value_pair.groups()
                     # TODO: use regex to catch CRLF line endings & unexpected whitespace
                     tail = re.search(r'([^"]*)"\s*$', line)
-                    while not tail:
+                    while not tail:  # keep grabbing lines until the end of the value
                         if "{" in line or "}" in line:
                             RuntimeError(f"Unexpected line in entities: L{line_no}: {line.encode()}")
                         line_no, line = next(enumerated_lines)
@@ -86,7 +93,7 @@ class Entities(list):
             elif line.strip() == b"\x00".decode():  # ignore null bytes
                 continue
             elif line.startswith("//"):  # ignore comments
-                continue
+                continue  # TODO: preserve comments
             else:
                 raise RuntimeError(f"Unexpected line in entities: L{line_no}: {line.encode()}")
             super().__init__(entities)
@@ -119,6 +126,8 @@ class Entities(list):
 
 
 class PakFile(zipfile.ZipFile):
+    _buffer: io.BytesIO
+
     def __init__(self, raw_zip: bytes):
         self._buffer = io.BytesIO(raw_zip)
         super(PakFile, self).__init__(self._buffer)
@@ -138,24 +147,6 @@ class TextureDataStringData(list):
 
     def as_bytes(self) -> bytes:
         return b"\0".join([t.encode("ascii") for t in self]) + b"\0"
-
-
-class Visiblity:
-    # seems to be the same across Source & Quake engines
-    # is Titanfall (v29) the same?
-    def __init__(self, raw_visibility: bytes):
-        visibility_data = [v[0] for v in struct.iter_unpack("i", raw_visibility)]
-        num_clusters = visibility_data
-        for i in range(num_clusters):
-            i = (2 * i) + 1
-            pvs_offset = visibility_data[i]  # noqa: F841
-            pas_offset = visibility_data[i + 1]  # noqa: F841
-            # ^ pointers into RLE encoded bits mapping the PVS tree
-            # from bytes inside the .bsp file?
-        raise NotImplementedError("Understanding of Visibility lump is incomplete")
-
-    def as_bytes(self) -> bytes:
-        raise NotImplementedError("Visibility lump hard")
 
 
 # methods

@@ -6,6 +6,8 @@ import math
 from typing import Iterable, Union
 
 
+# TODO: swizzle __getattr__ methods
+
 class vec2:
     """2D vector class"""
     __slots__ = ["x", "y"]
@@ -13,7 +15,7 @@ class vec2:
     y: float
 
     def __init__(self, x: float = 0, y: float = 0):
-        self.x, self.y = x, y
+        self.x, self.y = float(x), float(y)
 
     def __abs__(self) -> float:
         return self.magnitude()
@@ -42,6 +44,9 @@ class vec2:
     def __getitem__(self, key: int) -> float:
         return [self.x, self.y][key]
 
+    def __hash__(self) -> int:
+        return hash(tuple(self))
+
     def __iter__(self) -> Iterable:
         return iter((self.x, self.y))
 
@@ -55,14 +60,14 @@ class vec2:
         return vec2(-self.x, -self.y)
 
     def __repr__(self) -> str:
-        return str([self.x, self.y])
+        return f"{self.__class__.__name__}{(self.x, self.y)}"
 
     def __rmul__(self, other: float) -> vec2:
         return self.__mul__(other)
 
     def __setitem__(self, key: Union[int, slice], value: float):
         if isinstance(key, slice):
-            for k, v in zip(["x", "y", "z"][key], value):
+            for k, v in zip(["x", "y", "z"][key], value[key]):
                 self.__setattr__(k, v)
         elif key == 0:
             self.x = value
@@ -78,6 +83,12 @@ class vec2:
     def magnitude(self) -> float:
         """length of vector"""
         return math.sqrt(self.sqrmagnitude())
+
+    def normalise(self):
+        """scale this vector into a unit vector"""
+        new = self.normalised()
+        self.x = new.x
+        self.y = new.y
 
     def normalised(self) -> vec2:
         """returns this vector if length was 1 (unless length is 0), does not mutate"""
@@ -105,15 +116,18 @@ class vec2:
 class vec3:
     """3D vector class"""
     __slots__ = ["x", "y", "z"]
+    x: float
+    y: float
+    z: float
 
-    def __init__(self, x: float = 0, y: float = 0, z: float = 0):
-        self.x, self.y, self.z = x, y, z
+    def __init__(self, x=0, y=0, z=0):
+        self.x, self.y, self.z = map(float, (x, y, z))
 
     def __abs__(self) -> float:
         return self.magnitude()
 
     def __add__(self, other: Iterable) -> vec3:
-        return vec3(*map(math.fsum, zip(self, other)))
+        return vec3(*map(math.fsum, itertools.zip_longest(self, other, fillvalue=0)))
 
     def __eq__(self, other: Union[float, Iterable]) -> bool:
         if isinstance(other, vec2):
@@ -136,6 +150,9 @@ class vec3:
     def __getitem__(self, key: int) -> float:
         return [self.x, self.y, self.z][key]
 
+    def __hash__(self) -> int:
+        return hash(tuple(self))
+
     def __iter__(self) -> Iterable:
         return iter((self.x, self.y, self.z))
 
@@ -154,14 +171,14 @@ class vec3:
         return vec3(-self.x, -self.y, -self.z)
 
     def __repr__(self) -> str:
-        return str([self.x, self.y, self.z])
+        return f"{self.__class__.__name__}{(self.x, self.y, self.z)}"
 
     def __rmul__(self, other: Union[float, Iterable]) -> vec3:
         return self.__mul__(other)
 
     def __setitem__(self, key: Union[int, slice], value: float):
         if isinstance(key, slice):
-            for k, v in zip(["x", "y", "z"][key], value):
+            for k, v in zip(["x", "y", "z"][key], value[key]):
                 self.__setattr__(k, v)
         elif key == 0:
             self.x = value
@@ -180,8 +197,15 @@ class vec3:
         """length of vector"""
         return math.sqrt(self.sqrmagnitude())
 
-    def normalise(self) -> vec3:
-        """returns unit vector without mutating"""
+    def normalise(self):
+        """scale this vector into a unit vector"""
+        new = self.normalised()
+        self.x = new.x
+        self.y = new.y
+        self.z = new.z
+
+    def normalised(self) -> vec3:
+        """returns vec3 as a unit vector"""
         m = self.magnitude()
         if m != 0:
             return vec3(self.x/m, self.y/m, self.z/m)
@@ -227,31 +251,41 @@ def lerp(a: Union[float, Iterable], b: Union[float, Iterable], t: float) -> Unio
 
 
 def angle_between(a: vec3, b: vec3) -> float:
-    return dot(a, b) / (a.magnitude() * b.magnitude())
+    dot(a, b) / (a.magnitude() * b.magnitude())
 
 
 def sort_clockwise(points: vec3, normal: Iterable) -> list:
-    """Sorts a series of point into a clockwise order (first point in sequence remains the same)"""
-    center = sum(points, vec3()) / len(points)
-    def score(a, b): return dot(normal, (a - center) * (b - center))
+    C = sum(points, vec3()) / len(points)
+    def score(A, B): return dot(normal, (A - C) * (B - C))
     left = []
     right = []
-    for i, point in enumerate(points[1:]):
-        i += 1
-        (left if score(points[0], point) >= 0 else right).append(i)
-    # TODO: simplify the proximity calculations
+    for index, point in enumerate(points[1:]):
+        (left if score(points[0], point) >= 0 else right).append(index + 1)
     proximity = dict()  # number of points between self and start
-    for i, point in enumerate(points[1:]):
+    for i, p in enumerate(points[1:]):
         i += 1
         if i in left:
             proximity[i] = len(right)
             for j in left:
-                if score(point, points[j]) >= 0:
+                if score(p, points[j]) >= 0:
                     proximity[i] += 1
         else:
             proximity[i] = 0
             for j in right:
-                if score(point, points[j]) >= 0:
+                if score(p, points[j]) >= 0:
                     proximity[i] += 1
     sorted_vec3s = [points[0]] + [points[i] for i in sorted(proximity.keys(), key=lambda k: proximity[k])]
     return sorted_vec3s
+
+
+def renamed_vec2(renamed_x: str, renamed_y: str) -> vec2:
+    """Surely there's a better way to do this"""
+    exec("\n".join([f"class vec2_{renamed_x}_{renamed_y}(vec2):",
+                    f"    def __set_x(s, x): s.x = x",
+                    f"    {renamed_x} = property(lambda s: s.x, __set_x)",
+                    f"    def __set_y(s, y): s.y = y",
+                    f"    {renamed_y} = property(lambda s: s.y, __set_y)"]))
+    return locals()[f"vec2_{renamed_x}_{renamed_y}"]
+
+
+# TODO: ivec2, ivec3, QAngle

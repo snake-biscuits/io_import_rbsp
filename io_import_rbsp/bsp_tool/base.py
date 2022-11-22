@@ -3,7 +3,6 @@ import os
 import struct
 from types import MethodType, ModuleType
 from typing import Any, Dict, List
-import warnings
 
 
 class Bsp:
@@ -20,8 +19,9 @@ class Bsp:
     folder: str
     headers: Dict[str, Any]
     # ^ {"LUMP.name": LumpHeader}
+    # NOTE: header type is self.branch.LumpHeader
     loading_errors: Dict[str, Exception]
-    # ^ {"LUMP.name": Exception("details")}
+    # ^ {"LUMP.name": Error("details")}
 
     def __init__(self, branch: ModuleType, filename: str = "untitled.bsp", autoload: bool = True):
         if not filename.lower().endswith(".bsp"):
@@ -34,7 +34,7 @@ class Bsp:
             if os.path.exists(filename):
                 self._preload()
             else:
-                warnings.warn(UserWarning(f"{filename} not found, creating a new .bsp"))
+                print(f"{filename} not found, creating a new .bsp")
                 self.headers = {L.name: self.branch.LumpHeader() for L in self.branch.LUMP}
 
     def __enter__(self):
@@ -53,8 +53,19 @@ class Bsp:
         version = f"({self.file_magic.decode('ascii', 'ignore')} version {version_number})"
         return f"<{self.__class__.__name__} '{self.filename}' {branch_script} {version}>"
 
+    def _header_generator(self, offset: int = 4) -> (str, Any):
+        for LUMP in self.branch.LUMP:
+            self.file.seek(offset + struct.calcsize(self.branch.LumpHeader._format) * LUMP.value)
+            lump_header = self.branch.LumpHeader.from_stream(self.file)
+            self.headers[LUMP.name] = lump_header
+            yield (LUMP.name, lump_header)
+
+    def _preload(self):
+        raise NotImplementedError()
+
     def lump_as_bytes(self, lump_name: str) -> bytes:
         """Converts the named (unversioned) lump back into bytes"""
+        # NOTE: LumpClasses are derived from branch, not lump data!
         if not hasattr(self, lump_name):
             return b""  # lump is empty / deleted
         lump_entries = getattr(self, lump_name)
@@ -71,7 +82,7 @@ class Bsp:
         # BspLump -> bytes
         elif lump_name in self.branch.LUMP_CLASSES:
             _format = self.branch.LUMP_CLASSES[lump_name]._format
-            raw_lump = b"".join([struct.pack(_format, *x.flat()) for x in lump_entries])
+            raw_lump = b"".join([struct.pack(_format, *x.as_tuple()) for x in lump_entries])
         # SpecialLumpClass -> bytes
         elif lump_name in self.branch.SPECIAL_LUMP_CLASSES:
             raw_lump = lump_entries.as_bytes()
@@ -93,13 +104,18 @@ class Bsp:
         # # write contents of lumps
 
     def save(self):
+        # NOTE: save_as must copy all lumps into memory (w/ lump_as_bytes) and close self.file
+        # -- otherwise a write conflict will occur; backups are recommended anyway
         self.save_as(os.path.join(self.folder, self.filename))
+        self._preload()  # reload file
 
     def set_branch(self, branch: ModuleType):
         """Calling .set_branch(...) on a loaded .bsp will not convert it!"""
         # branch is a "branch script" that has been imported into python
         # if writing your own "branch script", see branches/README.md for a guide
-        # TODO: remove old methods first
+        if hasattr(self, "branch"):
+            for method in getattr(branch, "methods", list()):
+                delattr(self, method.__name__)
         self.branch = branch
         # attach methods
         for method in getattr(branch, "methods", list()):

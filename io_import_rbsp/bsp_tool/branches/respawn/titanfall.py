@@ -2,11 +2,13 @@
 from __future__ import annotations
 import enum
 import io
+import math
 import struct
-from typing import Dict, List, Union
+from typing import Any, Dict, List, Tuple, Union
 
 from .. import base
 from .. import shared
+from .. import vector
 from ..id_software import quake
 from ..valve import source
 
@@ -88,7 +90,7 @@ class LUMP(enum.Enum):
     UNUSED_63 = 0x003F
     UNUSED_64 = 0x0040
     UNUSED_65 = 0x0041
-    TRICOLL_TRIS = 0x0042
+    TRICOLL_TRIANGLES = 0x0042
     UNUSED_67 = 0x0043
     TRICOLL_NODES = 0x0044
     TRICOLL_HEADERS = 0x0045
@@ -116,8 +118,8 @@ class LUMP(enum.Enum):
     CM_UNIQUE_CONTENTS = 0x005B
     CM_BRUSHES = 0x005C
     CM_BRUSH_SIDE_PLANE_OFFSETS = 0x005D
-    CM_BRUSH_SIDE_PROPS = 0x005E
-    CM_BRUSH_TEX_VECS = 0x005F
+    CM_BRUSH_SIDE_PROPERTIES = 0x005E
+    CM_BRUSH_SIDE_TEXTURE_VECTORS = 0x005F
     TRICOLL_BEVEL_STARTS = 0x0060
     TRICOLL_BEVEL_INDICES = 0x0061
     LIGHTMAP_DATA_SKY = 0x0062
@@ -149,7 +151,7 @@ class LUMP(enum.Enum):
     SHADOW_MESH_OPAQUE_VERTICES = 0x007C
     SHADOW_MESH_ALPHA_VERTICES = 0x007D
     SHADOW_MESH_INDICES = 0x007E
-    SHADOW_MESH_MESHES = 0x007F
+    SHADOW_MESHES = 0x007F
 
 
 LumpHeader = source.LumpHeader
@@ -159,20 +161,20 @@ LumpHeader = source.LumpHeader
 # Model -> Mesh -> MeshIndex -\-> VertexReservedX -> Vertex
 #             \--> .flags (VertexReservedX)     \--> VertexNormal
 #              \-> VertexReservedX               \-> .uv
-
-# MeshBounds & Mesh are indexed in paralell?
+# MeshBounds & Mesh are parallel
+# NOTE: parallel means each entry is paired with an entry of the same index in the parallel lump
+# -- this means you can collect only the data you need, but increases the chance of storing redundant data
 
 # LeafWaterData -> TextureData -> water material
 # NOTE: LeafWaterData is also used in calculating VPhysics / PHYSICS_COLLIDE
 
-# ??? ShadowMesh -?> ShadowMeshIndices -?> ShadowMeshAlphaVertex
-#                                     \-?> ShadowMeshOpaqueVertex
-
-# ??? -> Brush -?> Plane
+# ShadowMesh -> ShadowMeshIndices -> ShadowMeshOpaqueVertex
+#                               \-?> ShadowMeshAlphaVertex
 
 # LightmapHeader -> LIGHTMAP_DATA_SKY
 #               \-> LIGHTMAP_DATA_REAL_TIME_LIGHTS
 
+# PORTAL LUMPS
 # Portal -?> PortalEdge -> PortalVertex
 # PortalEdgeRef -> PortalEdge
 # PortalVertRef -> PortalVertex
@@ -180,14 +182,38 @@ LumpHeader = source.LumpHeader
 #                    \-> PortalVertex
 
 # PortalEdgeIntersectHeader -> ???
-# NOTE: there are always as many intersect headers as edges
+# PortalEdgeIntersectHeader is parallel w/ PortalEdge
+# NOTE: titanfall 2 only seems to care about PortalEdgeIntersectHeader & ignores all other lumps
+# -- though this is a code branch that seems to be triggered by something about r1 maps, maybe a flags lump?
 # NOTE: there are also always as many vert refs as edge refs
+# PortalEdgeRef is parallel w/ PortalVertRef (both 2 bytes per entry, so not 2 verts per edge?)
 
-# CM_GRID probably defines the bounds of CM_GRID_CELLS, with CM_GRID_CELLS indexing other objects?
-# GM_GRID is always 1x 28 byte entry???
+# CM_* LUMPS
+# the entire GM_GRID lump is always 28 bytes (SpecialLumpClass? flags & world bounds?)
 
-# Grid -?> Brush -?> BrushSidePlaneOffset -?> Plane
-# (? * ? + ?) * 4 -> GridCell
+# Grid -> GridCell -> GeoSetBounds | GeoSet -> Brush / Tricoll
+
+# what does the Cell lump do? (CoD introduces a Cell lump)
+# sounds vistree related (cell / node?)
+
+# how are CM_Primitives indexed?
+
+# BrushSideProperties is parallel w/ BrushSideTextureVector
+# len(BrushSideProperties/TextureVectors) = len(Brushes) * 6 + len(BrushSidePlaneOffsets)
+
+#      /-> BrushSidePlaneOffset -?> Plane
+# Brush -> BrushSideProperties -> TextureData
+#      \-> BrushSideTextureVector
+# -?> UniqueContents
+
+# Primitives is parallel w/ PrimitiveBounds
+# GeoSets is parallel w/ GeoSetBounds
+# PrimitiveBounds & GeoSetBounds use the same type (loaded w/ the same function in engine.dll)
+
+# TODO: TRICOLL_* LUMPS
+# TODO: LIGHTPROBES
+# LightProbeTree -?> LightProbeRef -> LightProbe
+# -?> STATIC_PROP_LIGHTPROBE_INDICES
 
 
 # engine limits:
@@ -201,7 +227,47 @@ class MAX(enum.Enum):
 
 
 # flag enums
-class Flags(enum.IntFlag):
+class Contents(enum.IntFlag):  # derived from source.Contents & Tracemask
+    """Brush flags"""  # set by flags in material (e.g. "%compileTitanClip")
+    # TODO: find where these flags are used
+    # visible
+    EMPTY = 0x00
+    SOLID = 0x01
+    WINDOW = 0x02  # bulletproof glass etc. (transparent but solid)
+    AUX = 0x04  # unused?
+    GRATE = 0x08  # allows bullets & vis
+    SLIME = 0x10
+    WATER = 0x20
+    UNKNOWN_1 = 0x40  # ! MOVED !  was BLOCK_LOS
+    OPAQUE = 0x80  # blocks AI Line Of Sight, may be non-solid
+    TEST_FOG_VOLUME = 0x100  # cannot be seen through, but may be non-solid
+    UNKNOWN_2 = 0x200  # ! NEW ! was UNUSED_1
+    UNUSED = 0x400  # TODO: confirm
+    TEAM1 = 0x0800
+    TEAM2 = 0x1000
+    IGNORE_NODRAW_OPAQUE = 0x2000  # ignore opaque if Surface.NO_DRAW
+    MOVEABLE = 0x4000
+    # not visible
+    AREAPORTAL = 0x8000
+    PLAYER_CLIP = 0x10000
+    MONSTER_CLIP = 0x20000
+    # CURRENT_0
+    BLOCK_LOS = 0x100000  # ! MOVED ! was CURRENT_90
+    # CURRENT_180
+    TITAN_CLIP = 0x200000  # ! NEW !  was CURRENT_270
+    UNKNOWN_3 = 0x400000  # ! NEW !  was CURRENT_UP
+    # CURRENT DOWN
+    ORIGIN = 0x1000000  # "removed before bsping an entity"
+    MONSTER = 0x2000000  # in-game only, shouldn't be in a .bsp
+    DEBRIS = 0x4000000
+    DETAIL = 0x8000000  # func_detail; for VVIS (visleaf assembly from Brushes)
+    TRANSLUCENT = 0x10000000
+    LADDER = 0x20000000
+    HITBOX = 0x40000000  # requests hit tracing use hitboxes
+    # TODO: might r1 Titan Shields be a flag?
+
+
+class MeshFlags(enum.IntFlag):
     # source.Surface (source.TextureInfo rolled into titanfall.TextureData ?)
     SKY_2D = 0x0002  # TODO: test overriding sky with this in-game
     SKY = 0x0004
@@ -219,78 +285,252 @@ class Flags(enum.IntFlag):
     MASK_VERTEX = 0x600
 
 
+class GeoSetFlags(enum.IntFlag):
+    """Identified by Fifty"""
+    BRUSH = 0x00
+    TRICOLL = 0x40
+
+
+TextureDataFlags = MeshFlags  # always the same as Mesh.flags -> MaterialSort -> TextureData.flags
+
+
+class TraceCollisionGroup(enum.Enum):
+    # taken from squirrel (vscript) by BobTheBob
+    NONE = 0
+    DEBRIS = 1
+    DEBRIS_TRIGGER = 2
+    PLAYER = 5
+    BREAKABLE_GLASS = 6
+    NPC = 8
+    WEAPON = 12
+    PROJECTILE = 14
+    BLOCK_WEAPONS = 18
+    BLOCK_WEAPONS_AND_PHYSICS = 19
+
+
+class TraceMask(enum.IntEnum):  # taken from squirrel (vscript) by BobTheBob
+    """source.ContentsMask eqiuvalent, exposed to squirrel vscript API"""
+    # PHYSICS
+    SOLID = Contents.SOLID | Contents.MOVEABLE | Contents.WINDOW | Contents.MONSTER | Contents.GRATE
+    PLAYER_SOLID = SOLID | Contents.PLAYER_CLIP
+    TITAN_SOLID = SOLID | Contents.TITAN_CLIP  # new
+    NPC_SOLID = SOLID | Contents.MONSTER_CLIP
+    WATER = Contents.WATER | Contents.SLIME  # removed Contents.MOVEABLE
+    # VIS
+    OPAQUE = Contents.SOLID | Contents.MOVEABLE | Contents.OPAQUE  # blocks light
+    OPAQUE_AND_NPCS = OPAQUE | Contents.MONSTER
+    BLOCK_LOS = OPAQUE | Contents.BLOCK_LOS  # blocks AI Line Of Sight; added Contents.OPAQUE
+    BLOCK_LOS_AND_NPCS = BLOCK_LOS | Contents.MONSTER
+    VISIBLE = OPAQUE | Contents.IGNORE_NODRAW_OPAQUE  # blocks Player Line Of Sight
+    VISIBLE_AND_NPCS = OPAQUE_AND_NPCS | Contents.IGNORE_NODRAW_OPAQUE
+    # WEAPONS
+    SHOT = 1178615859  # source.ContentsMask.SHOT | WATER | Contents.MOVEABLE
+    SHOT_BRUSH_ONLY = 71319603  # ! NEW !  SHOT & ~(Contents.HITBOX | Contents.MONSTER)
+    SHOT_HULL = 104873995  # source.ContentsMask.SHOT_HULL | Contents.MOVEABLE
+    GRENADE = SOLID | Contents.HITBOX | Contents.DEBRIS  # ! NEW !
+    # ALTERNATES
+    SOLID_BRUSH_ONLY = 16907  # source.ContentsMask.SOLID_BRUSH_ONLY | Contents.UNKNOWN_2
+    PLAYER_SOLID_BRUSH_ONLY = SOLID_BRUSH_ONLY | Contents.PLAYER_CLIP
+    NPC_SOLID_BRUSH_ONLY = SOLID_BRUSH_ONLY | Contents.MONSTER_CLIP
+    NPC_WORLD_STATIC = Contents.SOLID | Contents.WINDOW | Contents.MONSTER_CLIP | Contents.GRATE  # for route rebuilding
+    NPC_FLUID = Contents.SOLID | Contents.MOVEABLE | Contents.WINDOW | Contents.MONSTER | Contents.MONSTER_CLIP  # new
+
+
 # classes for lumps, in alphabetical order:
 class Bounds(base.Struct):  # LUMP 88 & 90 (0058 & 005A)
-    unknown: List[int]  # shorts seem to work best? doesn't look like AABB bounds?
-    __slots__ = ["unknown"]
+    """Identified by warmist"""
+    origin: vector.vec3  # uint16_t
+    unknown_1: int
+    extents: vector.vec3  # uint16_t
+    unknown_2: int
+    __slots__ = ["origin", "unknown_1", "extents", "unknown_2"]
     _format = "8h"
-    _arrays = {"unknown": 8}
+    _arrays = {"origin": [*"xyz"], "extents": [*"xyz"]}
+    _classes = {"origin": vector.vec3, "extents": vector.vec3}
 
 
 class Brush(base.Struct):  # LUMP 92 (005C)
-    mins: List[float]
-    flags: int
-    maxs: List[float]
-    unknown: int  # almost always 0
-    __slots__ = ["mins", "flags", "maxs", "unknown"]
-    _format = "3fi3fi"
-    _arrays = {"mins": [*"xyz"], "maxs": [*"xyz"]}
+    """A bounding box sliced down into a convex hull by multiple planes"""
+    origin: vector.vec3
+    unknown: int  # might tie into plane indexing, but I kinda hope not
+    num_plane_offsets: int  # number of CM_BRUSH_SIDE_ PLANE_OFFSETS / PROPERITES in this brush
+    # num_brush_sides = 6 + num_plane_offsets
+    index: int  # index of this Brush; makes calculating BrushSideX indices easier
+    extents: vector.vec3
+    # mins = origin - extents
+    # maxs = origin + extents
+    brush_side_offset: int  # also provides first_plane_offset, somehow ...
+    # first_brush_side = (index * 6 + brush_side_offset)
+
+    # TODO: determine how planes are indexed? planes might get reused
+    # -- current theory is we count up from a starting index but shift back by the current plane offset
+
+    # TODO: we might be able to match planes w/ texvec math (this assumes uniform texture scale / projection)
+    # -- (vec3) local_x * (vec3) local_y = (vec3) local_z  // [normal axis]
+    # -- dot normal against bounds & find valid intersections that maintain AABB
+    # -- NOTE: multiple intersections could occur to create a given AABB
+    # -------  the plane may or may not touch an AABB point, but we can still find the range of valid distances
+
+    __slots__ = ["origin", "unknown", "num_plane_offsets", "index", "extents", "brush_side_offset"]
+    _format = "3f2Bh3fi"
+    _arrays = {"origin": [*"xyz"], "extents": [*"xyz"]}
+    _classes = {"origin": vector.vec3, "extents": vector.vec3}
+
+
+# TODO: use a BitField instead
+class BrushSideProperty(shared.UnsignedShort, enum.IntFlag):  # LUMP 94 (005E)
+    UNKNOWN_FLAG = 0x8000
+    DISCARD = 0x4000  # this side helps define bounds (axial or bevel), but has no polygon
+    # NO OTHER FLAGS APPEAR TO BE USED IN R1 / R1:O / R2
+    # R5 DEPRECATED CM_BRUSH_SIDE_PROPERTIES
+
+    MASK_TEXTURE_DATA = 0x01FF  # R1 / R1:O / R2 never exceed 512 (0x1FF + 1) TextureData per-map
 
 
 class Cell(base.Struct):  # LUMP 107 (006B)
     """BVH4? (GDC 2018 - Extreme SIMD: Optimized Collision Detection in Titanfall)
 https://www.youtube.com/watch?v=6BIfqfC1i7U
 https://gdcvault.com/play/1025126/Extreme-SIMD-Optimized-Collision-Detection"""
-    a: int
-    b: int
-    c: int
-    d: int  # always -1?
-    __slots__ = [*"abcd"]
-    _format = "4h"
+    num_portals: int  # link found by Fifty
+    unknown: List[int]  # 2nd is always -1? TODO: confirm
+    __slots__ = ["num_portals", "unknown"]
+    _format = "I2H"
+    _arrays = {"unknown": 2}
+
+
+class CellAABBNode(base.Struct):  # LUMP 119 (0077)
+    """Identified by Fifty#8113"""
+    origin: vector.vec3
+    num_children: int  # number of CellAABBNodes after first_child
+    num_obj_refs: int  # number of ObjReferences after first_obj_rf
+    total_obj_refs: int  # sum of all obj refs in children
+    extents: vector.vec3
+    first_child: int  # index into CellAABBNodes
+    first_obj_ref: int  # index into ObjReferences
+    __slots__ = ["origin", "num_children", "num_obj_refs", "total_obj_refs",
+                 "extents", "first_child", "first_obj_ref"]
+    _format = "3f2BH3f2H"  # Extreme SIMD
+    _arrays = {"origin": [*"xyz"], "extents": [*"xyz"]}
+    _classes = {"origin": vector.vec3, "extents": vector.vec3}
+
+
+class CellBSPNode(base.MappedArray):  # LUMP 106 (006A)
+    unknown_1: int
+    unknown_2: int
+    _mapping = ["unknown_1", "unknown_2"]
+    _format = "2i"
 
 
 class Cubemap(base.Struct):  # LUMP 42 (002A)
-    origin: List[int]
+    origin: vector.vec3  # int32_t
     unknown: int  # index? flags?
     __slots__ = ["origin", "unknown"]
     _format = "3iI"
     _arrays = {"origin": [*"xyz"]}
+    _classes = {"origin": vector.vec3}
+
+
+class GeoSet(base.Struct):  # LUMP 87 (0057)
+    unknown: List[int]  # uint16_t[2]
+    child: base.BitField  # struct { uint32_t type: 8, index: 16, unknown: 8; };
+    # child.unknown: int  # may not be relevant to child
+    # child.index: int  # index of Brush / TriCollHeader?
+    # child.type: GeoSetFlags  # Brush or TriColl
+    __slots__ = ["unknown", "child"]
+    _format = "2HI"
+    _arrays = {"unknown": 2}
+    _bitfields = {"child": {"unknown": 8, "index": 16, "type": 8}}
+    _classes = {"child.type": GeoSetFlags}
 
 
 # NOTE: only one 28 byte entry per file
 class Grid(base.Struct):  # LUMP 85 (0055)
-    scale: float  # scaled against some global vector in engine, I think
-    min_x: int  # *close* to (world_mins * scale) + scale
-    min_y: int  # *close* to (world_mins * scale) + scale
-    unknown: List[int]
-    __slots__ = ["scale", "min_x", "min_y", "unknown"]
+    """splits the map into a grid on the XY-axes"""
+    # grid pattern start at mins.xy, increments Y first, then X
+    scale: float  # 256 for r1, 704 for r2
+    offset: vector.vec2  # position of first GridCell (mins.xy)
+    count: vector.vec2  # x * y = number of GridCells in worldspawn
+    # count.x * count.y + len(Models) = len(CMGridCells)
+    # mins = offset * scale
+    # maxs = (offset + count) * scale
+    # NOTE: bounds covers Models[0]
+    num_straddle_groups: int  # linked to geosets, objects straddling many gridcells?
+    base_plane_offet: int  # first plane for brushes to index
+    # other planes might be used by portals, unsure
+    __slots__ = ["scale", "offset", "count", "num_straddle_groups", "base_plane_offset"]
     _format = "f6i"
-    _arrays = {"unknown": 4}
+    _arrays = {"offset": [*"xy"], "count": [*"xy"]}
 
 
-class LeafWaterData(base.Struct):
-    surface_z: float  # global Z height of the water's surface
-    min_z: float  # bottom of the water volume?
-    texture_data: int  # index to this LeafWaterData's TextureData
-    _mapping = ["surface_z", "min_z", "texture_data"]
-    _format = "2fI"
+class GridCell(base.MappedArray):  # LUMP 86 (0056)
+    # GridCells[:Grid.count.x * Grid.count.y]     => Models[0]; broken into cells
+    # GridCells[Grid.count.x * Grid.count.y + 1]  => Models[0]; num_geo_sets = 0
+    # GridCells[Grid.count.x * Grid.count.y + 2:] => Models[1:]; 1 cell per model
+    # x = index / Grid.count.y + Grid.offset.x
+    # y = index % Grid.count.x + Grid.offset.y
+    # bounds.mins.xy = x * Grid.scale, y * Grid.scale
+    # bounds.maxs.xy = (x + 1) * Grid.scale, (y + 1) * scale
+    first_geo_set: int
+    num_geo_sets: int
+    _mapping = ["first_geo_set", "num_geo_sets"]
+    _format = "2H"
 
 
-class LightmapHeader(base.Struct):  # LUMP 83 (0053)
-    count: int  # assuming this counts the number of lightmaps this size
-    # NOTE: there's actually 2 identically sized lightmaps for each header (for titanfall2)
+# NOTE: only one 28 byte entry per file
+class LevelInfo(base.Struct):  # LUMP 123 (007B)
+    """Identified by Fifty"""
+    unknown: List[int]  # possibly linked to mesh flags in worldspawn?
+    # unknowns are probably some kind of mesh counts
+    # unknown[2] is almost always len([... for m in bsp.MESHES if m.flags & 0x200])
+    num_static_props: int  # len(bsp.GAME_LUMP.sprp.props)
+    sun_angle: vector.vec3  # represents angle of last light_environment
+    __slots__ = ["unknown", "num_static_props", "sun_angle"]
+    _format = "4I3f"
+    _arrays = {"unknown": 3, "sun_angle": [*"xyz"]}
+    _classes = {"sun_angle": vector.vec3}
+
+
+class LightmapHeader(base.MappedArray):  # LUMP 83 (0053)
+    flags: int  # makes the most sense but idk
     width: int
     height: int
-    __slots__ = ["count", "width", "height"]
+    _mapping = ["flags", "width", "height"]
     _format = "I2H"
+
+
+class LightProbe(base.Struct):  # LUMP 102 (0066)
+    """Identified by rexx"""  # untested
+    cube: List[List[int]]  # rgb888 ambient light cube
+    sky_dir_sun_vis: List[int]
+    static_light: List[List[int]]  # connection to local static lights
+    # static_light.weights: List[int]  # up to 4 scalars; default 0
+    # static_light.indices: List[int]  # up to 4 indices; default -1
+    __slots__ = ["cube", "sky_dir_sun_vis", "static_light", "padding"]
+    _format = "24B4h4B4hI"
+    _arrays = {"cube": {x: [*"rgba"] for x in "ABCDEF"}, "sky_dir_sun_vis": 4,
+               "static_light": {"weights": 4, "indices": 4}}
+    # TODO: map cube face names to UP, DOWN etc.
+    # TODO: ambient light cube childClass
 
 
 class LightProbeRef(base.Struct):  # LUMP 104 (0068)
     origin: List[float]  # coords of LightProbe
     lightprobe: int  # index of this LightProbeRef's LightProbe
+    # NOTE: not every lightprobe is indexed
     __slots__ = ["origin", "lightprobe"]
     _format = "3fI"
     _arrays = {"origin": [*"xyz"]}
+    _classes = {"origin": vector.vec3}
+
+
+class LightProbeTree(base.MappedArray):  # LUMP 103 (0067)
+    """Identified by rexx"""
+    # seems wrong, no clue as to connections
+    tag: int  # could be flags but tends to increment (bitfield?)
+    num_entries: int  # often looks like a valid float
+    # num_entries switches between floats and small ints
+    _format = "2I"  # could be too small
+    _mapping = ["tag", "num_entries"]
 
 
 class MaterialSort(base.MappedArray):  # LUMP 82 (0052)
@@ -300,7 +540,7 @@ class MaterialSort(base.MappedArray):  # LUMP 82 (0052)
     unknown: int
     vertex_offset: int  # offset into appropriate VERTEX_RESERVED_X lump
     _mapping = ["texture_data", "lightmap_header", "cubemap", "unknown", "vertex_offset"]
-    _format = "4hi"  # 12 bytes
+    _format = "4hi"
 
 
 class Mesh(base.Struct):  # LUMP 80 (0050)
@@ -312,22 +552,34 @@ class Mesh(base.Struct):  # LUMP 80 (0050)
     # for mp_box.VERTEX_LIT_BUMP: (2, -256, -1,  ?,  ?,  ?)
     # for mp_box.VERTEX_UNLIT:    (0,   -1, -1, -1, -1, -1)
     material_sort: int  # index of this Mesh's MaterialSort
-    flags: int  # Flags(mesh.flags & Flags.MASK_VERTEX).name == "VERTEX_RESERVED_X"
+    flags: MeshFlags  # (mesh.flags & MeshFlags.MASK_VERTEX).name == "VERTEX_RESERVED_X"
     __slots__ = ["first_mesh_index", "num_triangles", "first_vertex",
                  "num_vertices", "unknown", "material_sort", "flags"]
-    _format = "I3H6hHI"  # 28 Bytes
+    _format = "I3H6hHI"
     _arrays = {"unknown": 6}
+    _classes = {"flags": MeshFlags}
 
 
 class MeshBounds(base.Struct):  # LUMP 81 (0051)
-    # NOTE: these are all guesses based on GDC 2018 - Extreme SIMD
-    mins: List[float]  # TODO: verify
-    flags_1: int  # unsure
-    maxs: List[float]
-    flags_2: int
-    __slots__ = ["mins", "flags_1", "maxs", "flags_2"]
-    _format = "3fI3fI"
-    _arrays = {"mins": [*"xyz"], "maxs": [*"xyz"]}
+    origin: List[float]
+    radius: float  # approx. magnitude of extents
+    extents: List[float]  # bounds extend symmetrically by this much along each axis
+    unknown_2: int  # could be a float, but value is strange; unsure of purpose; can be 0
+    __slots__ = ["origin", "radius", "extents", "unknown_2"]
+    _format = "4f3fI"
+    _arrays = {"origin": [*"xyz"], "extents": [*"xyz"]}
+    _classes = {"origin": vector.vec3, "extents": vector.vec3}
+
+    @classmethod
+    def from_bounds(cls, mins: List[float], maxs: List[float]) -> MeshBounds:
+        out = cls()
+        mins = vector.vec3(*mins)
+        maxs = vector.vec3(*maxs)
+        out.origin = maxs - mins
+        out.extents = maxs - out.origin
+        out.radius = out.extents.magnitude() + 0.001  # round up a little
+        # out.unknown_2 = ...
+        return out
 
 
 class Model(base.Struct):  # LUMP 14 (000E)
@@ -339,9 +591,11 @@ class Model(base.Struct):  # LUMP 14 (000E)
     __slots__ = ["mins", "maxs", "first_mesh", "num_meshes"]
     _format = "6f2I"
     _arrays = {"mins": [*"xyz"], "maxs": [*"xyz"]}
+    _classes = {"mins": vector.vec3, "maxs": vector.vec3}
 
 
-class Node(base.Struct):  # LUMP 99, 106 & 119 (0063, 006A & 0077)
+class Node(base.Struct):  # LUMP 99 (0063)
+    # NOTE: the struct length & positions of mins & maxs take advantage of SIMD 128-bit registers
     mins: List[float]
     unknown_1: int
     maxs: List[float]
@@ -349,17 +603,21 @@ class Node(base.Struct):  # LUMP 99, 106 & 119 (0063, 006A & 0077)
     __slots__ = ["mins", "unknown_1", "maxs", "unknown_2"]
     _format = "3fi3fi"
     _arrays = {"mins": [*"xyz"], "maxs": [*"xyz"]}
+    _classes = {"mins": vector.vec3, "maxs": vector.vec3}
 
 
 class ObjRefBounds(base.Struct):  # LUMP 121 (0079)
-    # NOTE: w is always 0, could be a copy of the Node class
+    # NOTE: w is always 0; SIMD?
     # - CM_BRUSHES Brush may also use this class
     # NOTE: introduced in v29, not present in v25
     mins: List[float]
+    unused_1: int
     maxs: List[float]
-    _format = "8f"
-    __slots__ = ["mins", "maxs"]
-    _arrays = {"mins": [*"xyzw"], "maxs": [*"xyzw"]}
+    unused_2: int
+    _format = "3fi3fi"
+    __slots__ = ["mins", "unused_1", "maxs", "unused_2"]
+    _arrays = {"mins": [*"xyz"], "maxs": [*"xyz"]}
+    _classes = {"mins": vector.vec3, "maxs": vector.vec3}
 
 
 class Plane(base.Struct):  # LUMP 1 (0001)
@@ -368,6 +626,7 @@ class Plane(base.Struct):  # LUMP 1 (0001)
     __slots__ = ["normal", "distance"]
     _format = "4f"
     _arrays = {"normal": [*"xyz"]}
+    _classes = {"normal": vector.vec3}
 
 
 class Portal(base.Struct):  # LUMP 108 (006C)
@@ -389,7 +648,14 @@ class PortalEdgeIntersectHeader(base.MappedArray):  # LUMP 116 (0074)
     start: int  # 0 - 3170
     count: int  # 1 - 6
     _mapping = ["start", "count"]  # assumed
-    _format = "2i"
+    _format = "2I"
+
+
+class Primitive(base.MappedArray):  # LUMP 89 (0059)
+    start: int  # assuming indices
+    count: int  # should have a smaller range than start
+    _mapping = ["start", "count"]
+    _format = "2h"
 
 
 class ShadowMesh(base.Struct):  # LUMP 127 (007F)
@@ -403,43 +669,12 @@ class ShadowMesh(base.Struct):  # LUMP 127 (007F)
 
 
 class ShadowMeshAlphaVertex(base.Struct):  # LUMP 125 (007D)
-    x: float
-    y: float
-    z: float
-    unknown: List[float]  # both are always from 0.0 -> 1.0 (uvs?)
+    position: List[float]
+    unknown: List[float]  # both are always from 0.0 -> 1.0 (uvs? alpha?)
     _format = "5f"
-    __slots__ = [*"xyz", "unknown"]
-    _arrays = {"unknown": 2}
-
-
-class StaticPropv12(base.Struct):  # sprp GAME_LUMP (0023)
-    origin: List[float]  # x, y, z
-    angles: List[float]  # pitch, yaw, roll
-    model_name: int  # index into GAME_LUMP.sprp.model_names
-    first_leaf: int
-    num_leaves: int  # NOTE: Titanfall doesn't have visleaves?
-    solid_mode: int  # bitflags
-    flags: int
-    skin: int
-    # NOTE: BobTheBob's definition varies here:
-    # int skin; float fade_min, fade_max; Vector lighting_origin;
-    cubemap: int  # index of this StaticProp's Cubemap
-    unknown: int
-    fade_distance: float
-    cpu_level: List[int]  # min, max (-1 = any)
-    gpu_level: List[int]  # min, max (-1 = any)
-    diffuse_modulation: List[int]  # RGBA 32-bit colour
-    scale: float
-    disable_x360: int
-    collision_flags: List[int]  # add, remove
-    __slots__ = ["origin", "angles", "model_name", "first_leaf", "num_leaves",
-                 "solid_mode", "flags", "skin", "cubemap", "unknown",
-                 "forced_fade_scale", "cpu_level", "gpu_level",
-                 "diffuse_modulation", "scale", "disable_x360", "collision_flags"]
-    _format = "6f3H2Bi2h4i2f8bfi2H"
-    _arrays = {"origin": [*"xyz"], "angles": [*"yzx"], "unknown": 6, "fade_distance": ["min", "max"],
-               "cpu_level": ["min", "max"], "gpu_level": ["min", "max"],
-               "diffuse_modulation": [*"rgba"], "collision_flags": ["add", "remove"]}
+    __slots__ = ["position", "unknown"]
+    _arrays = {"position": [*"xyz"], "unknown": 2}
+    _classes = {"position": vector.vec3}
 
 
 class TextureData(base.Struct):  # LUMP 2 (0002)
@@ -448,11 +683,13 @@ class TextureData(base.Struct):  # LUMP 2 (0002)
     name_index: int  # index of material name in TEXTURE_DATA_STRING_DATA / TABLE
     size: List[int]  # dimensions of full texture
     view: List[int]  # dimensions of visible section of texture
-    flags: int  # matches Mesh's .flags; probably from source.TextureInfo
+    flags: int  # matches .flags of Mesh indexing this TextureData (Mesh->MaterialSort->TextureData)
     __slots__ = ["reflectivity", "name_index", "size", "view", "flags"]
     _format = "3f6i"
     _arrays = {"reflectivity": [*"rgb"],
                "size": ["width", "height"], "view": ["width", "height"]}
+    _classes = {"flags": TextureDataFlags}
+    # TODO: rgb24 reflectivity & width-height vec2 for size & view
 
 
 class TextureVector(base.Struct):  # LUMP 95 (005F)
@@ -460,19 +697,41 @@ class TextureVector(base.Struct):  # LUMP 95 (005F)
     t: List[float]  # T vector
     __slots__ = ["s", "t"]
     _format = "8f"
-    _arrays = {"s": [*"xyzw"], "t": [*"xyzw"]}
+    _arrays = {"s": [*"xyz", "offset"], "t": [*"xyz", "offset"]}
+    # TODO: vec3 for texvec components
 
 
 class TricollHeader(base.Struct):  # LUMP 69 (0045)
+    # Identified by Fifty; very WIP
+    # NOTE: the 16 lowest bits of flags are always blank
+    # NOTE: last header's first_vertex is always less than len(bsp.TRICOLL_TRIANGLES)
+    flags: int  # unsure
+    material: int  # unsure; indexes TextureData?
+    num_vertices: int  # indexing vertices?
+    num_bevels: int  # might be counting nodes?
+    first_vertex: int
+    first_bevel_start: int  # this + num_bevels = next first_bevel_start
+    first_tricoll_node: int
+    num_bevel_indices: int  # unsure; always <= len(TricollBevelIndices)
+    unknown: List[float]
+    __slots__ = ["flags", "material", "num_vertices", "num_bevels", "first_vertex",
+                 "first_bevel_start", "first_tricoll_node", "num_bevel_indices", "unknown"]
+    _format = "i2h5i4f"
+    _arrays = {"unknown": 4}
+
+
+class TricollNode(base.Struct):  # LUMP 68 (0044)
     __slots__ = ["unknown"]
-    _format = "11i"
-    _arrays = {"unknown": 11}
+    _format = "4i"
+    _arrays = {"unknown": 4}
 
 
 class WorldLight(base.Struct):  # LUMP 54 (0036)
-    __slots__ = ["unknown"]
-    _format = "25I"  # 100 bytes
-    _arrays = {"unknown": 25}
+    origin: List[float]
+    __slots__ = ["origin", "unknown"]
+    _format = "3f22I"  # 100 bytes
+    _arrays = {"origin": [*"xyz"], "unknown": 22}
+    _classes = {"origin": vector.vec3}
 
 
 # special vertices
@@ -499,6 +758,7 @@ class VertexLitBump(base.Struct):  # LUMP 73 (0049)
     __slots__ = ["position_index", "normal_index", "uv0", "unknown"]
     _format = "2I2fi2f4i"  # 44 bytes
     _arrays = {"uv0": [*"uv"], "unknown": 7}
+    # TODO: uv vec2
 
 
 class VertexLitFlat(base.Struct):  # LUMP 72 (0048)
@@ -510,6 +770,7 @@ class VertexLitFlat(base.Struct):  # LUMP 72 (0048)
     __slots__ = ["position_index", "normal_index", "uv0", "unknown"]
     _format = "2I2f5I"
     _arrays = {"uv0": [*"uv"], "unknown": 5}
+    # TODO: uv vec2
 
 
 class VertexUnlit(base.Struct):  # LUMP 71 (0047)
@@ -521,6 +782,7 @@ class VertexUnlit(base.Struct):  # LUMP 71 (0047)
     __slots__ = ["position_index", "normal_index", "uv0", "unknown"]
     _format = "2I2fi"  # 20 bytes
     _arrays = {"uv0": [*"uv"]}
+    # TODO: uv vec2
 
 
 class VertexUnlitTS(base.Struct):  # LUMP 74 (004A)
@@ -532,6 +794,7 @@ class VertexUnlitTS(base.Struct):  # LUMP 74 (004A)
     __slots__ = ["position_index", "normal_index", "uv0", "unknown"]
     _format = "2I2f3I"  # 28 bytes
     _arrays = {"uv0": [*"uv"], "unknown": 3}
+    # TODO: uv vec2
 
 
 VertexReservedX = Union[VertexBlinnPhong, VertexLitBump, VertexLitFlat, VertexUnlit, VertexUnlitTS]  # type hint
@@ -582,7 +845,7 @@ class GameLump_SPRP:
 
     def as_bytes(self) -> bytes:
         if len(self.props) > 0:
-            prop_bytes = [struct.pack(self.StaticPropClass._format, *p.flat()) for p in self.props]
+            prop_bytes = [struct.pack(self.StaticPropClass._format, *p.as_tuple()) for p in self.props]
         else:
             prop_bytes = []
         return b"".join([len(self.model_names).to_bytes(4, "little"),
@@ -593,12 +856,43 @@ class GameLump_SPRP:
                          *prop_bytes])
 
 
+class StaticPropv12(base.Struct):  # sprp GAME_LUMP (LUMP 35 / 0023) [version 12]
+    """appears to extend valve.left4dead.StaticPropv8"""
+    origin: List[float]  # x, y, z
+    angles: List[float]  # pitch, yaw, roll
+    model_name: int  # index into GAME_LUMP.sprp.model_names
+    first_leaf: int
+    num_leaves: int  # NOTE: Titanfall doesn't have visleaves?
+    solid_mode: int  # bitflags
+    flags: int
+    skin: int
+    # NOTE: BobTheBob's definition varies here:
+    # int skin; float fade_min, fade_max; Vector lighting_origin;
+    cubemap: int  # index of this StaticProp's Cubemap
+    unknown: int
+    forced_fade_scale: float
+    cpu_level: List[int]  # min, max (-1 = any)
+    gpu_level: List[int]  # min, max (-1 = any)
+    diffuse_modulation: List[int]  # RGBA 32-bit colour
+    scale: float
+    disable_x360: int  # 4 byte bool
+    collision_flags: List[int]  # add, remove
+    __slots__ = ["origin", "angles", "model_name", "first_leaf", "num_leaves",
+                 "solid_mode", "flags", "skin", "cubemap", "unknown",
+                 "forced_fade_scale", "cpu_level", "gpu_level",
+                 "diffuse_modulation", "scale", "disable_x360", "collision_flags"]
+    _format = "6f3H2Bi2h4i2f8bfI2H"
+    _arrays = {"origin": [*"xyz"], "angles": [*"yzx"], "unknown": 6, "fade_distance": ["min", "max"],
+               "cpu_level": ["min", "max"], "gpu_level": ["min", "max"],
+               "diffuse_modulation": [*"rgba"], "collision_flags": ["add", "remove"]}
+    _classes = {"origin": vector.vec3}
+    # TODO: Qangle vec3 type (0-360 pitch yaw roll), rgb32 diffuse_modulation
+
+
 # {"LUMP_NAME": {version: LumpClass}}
 BASIC_LUMP_CLASSES = {"CM_BRUSH_SIDE_PLANE_OFFSETS": {0: shared.UnsignedShorts},
-                      "CM_BRUSH_SIDE_PROPS":         {0: shared.UnsignedShorts},
-                      "CM_GRID_CELLS":               {0: shared.UnsignedInts},
-                      "CM_PRIMITIVES":               {0: shared.UnsignedInts},
-                      "CM_UNIQUE_CONTENTS":          {0: shared.UnsignedInts},  # flags?
+                      "CM_BRUSH_SIDE_PROPERTIES":    {0: BrushSideProperty},
+                      "CM_UNIQUE_CONTENTS":          {0: shared.UnsignedInts},  # source.Contents? test against vmts?
                       "CSM_OBJ_REFERENCES":          {0: shared.UnsignedShorts},
                       "MESH_INDICES":                {0: shared.UnsignedShorts},
                       "OBJ_REFERENCES":              {0: shared.UnsignedShorts},
@@ -606,22 +900,28 @@ BASIC_LUMP_CLASSES = {"CM_BRUSH_SIDE_PLANE_OFFSETS": {0: shared.UnsignedShorts},
                       "PORTAL_EDGE_REFERENCES":      {0: shared.UnsignedShorts},
                       "PORTAL_VERTEX_REFERENCES":    {0: shared.UnsignedShorts},
                       "SHADOW_MESH_INDICES":         {0: shared.UnsignedShorts},
-                      "TEXTURE_DATA_STRING_TABLE":   {0: shared.UnsignedShorts},
+                      "TEXTURE_DATA_STRING_TABLE":   {0: shared.UnsignedInts},
                       "TRICOLL_BEVEL_STARTS":        {0: shared.UnsignedShorts},
-                      "TRICOLL_BEVEL_INDICES":       {0: shared.UnsignedInts}}
+                      "TRICOLL_BEVEL_INDICES":       {0: shared.UnsignedInts},
+                      "TRICOLL_TRIANGLES":           {2: shared.UnsignedInts}}  # could be a pair of shorts?
 
 LUMP_CLASSES = {"CELLS":                             {0: Cell},
-                "CELL_AABB_NODES":                   {0: Node},
-                # "CELL_BSP_NODES":                    {0: Node},
+                "CELL_AABB_NODES":                   {0: CellAABBNode},
+                "CELL_BSP_NODES":                    {0: CellBSPNode},
                 "CM_BRUSHES":                        {0: Brush},
-                "CM_BRUSH_TEX_VECS":                 {0: TextureVector},
+                "CM_BRUSH_SIDE_TEXTURE_VECTORS":     {0: TextureVector},
+                "CM_GEO_SETS":                       {0: GeoSet},
                 "CM_GEO_SET_BOUNDS":                 {0: Bounds},
+                "CM_GRID_CELLS":                     {0: GridCell},
+                "CM_PRIMITIVES":                     {0: Primitive},
                 "CM_PRIMITIVE_BOUNDS":               {0: Bounds},
                 "CSM_AABB_NODES":                    {0: Node},
                 "CUBEMAPS":                          {0: Cubemap},
-                "LEAF_WATER_DATA":                   {0: LeafWaterData},
+                "LEAF_WATER_DATA":                   {1: source.LeafWaterData},
                 "LIGHTMAP_HEADERS":                  {1: LightmapHeader},
+                "LIGHTPROBES":                       {0: LightProbe},
                 "LIGHTPROBE_REFERENCES":             {0: LightProbeRef},
+                "LIGHTPROBE_TREE":                   {0: LightProbeTree},
                 "MATERIAL_SORT":                     {0: MaterialSort},
                 "MESHES":                            {0: Mesh},
                 "MESH_BOUNDS":                       {0: MeshBounds},
@@ -636,11 +936,12 @@ LUMP_CLASSES = {"CELLS":                             {0: Cell},
                 "PORTAL_EDGE_INTERSECT_HEADER":      {0: PortalEdgeIntersectHeader},
                 "PORTAL_VERTICES":                   {0: quake.Vertex},
                 "PORTAL_VERTEX_EDGES":               {0: PortalEdgeIntersect},
-                "SHADOW_MESH_MESHES":                {0: ShadowMesh},
+                "SHADOW_MESHES":                     {0: ShadowMesh},
                 "SHADOW_MESH_ALPHA_VERTICES":        {0: ShadowMeshAlphaVertex},
                 "SHADOW_MESH_OPAQUE_VERTICES":       {0: quake.Vertex},
                 "TEXTURE_DATA":                      {1: TextureData},
-                "TRICOLL_HEADERS":                   {0: TricollHeader},
+                "TRICOLL_HEADERS":                   {1: TricollHeader},
+                "TRICOLL_NODES":                     {1: TricollNode},
                 "VERTEX_NORMALS":                    {0: quake.Vertex},
                 "VERTICES":                          {0: quake.Vertex},
                 "VERTEX_BLINN_PHONG":                {0: VertexBlinnPhong},
@@ -654,9 +955,11 @@ SPECIAL_LUMP_CLASSES = {"CM_GRID":                   {0: Grid.from_bytes},
                         "ENTITY_PARTITIONS":         {0: EntityPartitions},
                         "ENTITIES":                  {0: shared.Entities},
                         # NOTE: .ent files are handled directly by the RespawnBsp class
+                        "LEVEL_INFO":                {0: LevelInfo.from_bytes},
                         "PAKFILE":                   {0: shared.PakFile},
                         "PHYSICS_COLLIDE":           {0: shared.physics.CollideLump},
                         "TEXTURE_DATA_STRING_DATA":  {0: shared.TextureDataStringData}}
+# TODO: LightProbeParentInfos/BspNodes/RefIds & StaticPropLightProbeIndices may all be Special
 
 GAME_LUMP_HEADER = source.GameLumpHeader
 
@@ -672,7 +975,7 @@ def vertices_of_mesh(bsp, mesh_index: int) -> List[VertexReservedX]:
     start = mesh.first_mesh_index
     finish = start + mesh.num_triangles * 3
     indices = [material_sort.vertex_offset + i for i in bsp.MESH_INDICES[start:finish]]
-    VERTEX_LUMP = getattr(bsp, (Flags(mesh.flags) & Flags.MASK_VERTEX).name)
+    VERTEX_LUMP = getattr(bsp, (MeshFlags(mesh.flags) & MeshFlags.MASK_VERTEX).name)
     return [VERTEX_LUMP[i] for i in indices]
 
 
@@ -745,7 +1048,7 @@ def shadow_meshes_as_obj(bsp) -> str:
             out.append(f"v {v.x} {v.y} {v.z}\nvt {v.unknown[0]} {v.unknown[1]}")
     # TODO: group by ShadowEnvironment if titanfall2
     end = 0
-    for i, mesh in enumerate(bsp.SHADOW_MESH_MESHES):
+    for i, mesh in enumerate(bsp.SHADOW_MESHES):
         out.append(f"o mesh_{i}")
         for j in range(mesh.num_triangles):
             start = end + j * 3
@@ -755,6 +1058,65 @@ def shadow_meshes_as_obj(bsp) -> str:
             out.append(f"f {v_tri[0]} {v_tri[1]} {v_tri[2]}")
         end = start + 3
     return "\n".join(out)
+
+
+def occlusion_mesh_as_obj(bsp) -> str:
+    out = [f"# generated with bsp_tool from {bsp.filename}",
+           "# OCCLUSION MESH"]
+    for v in bsp.OCCLUSION_MESH_VERTICES:
+        out.append(f"v {v.x} {v.y} {v.z}")
+    for i in range(0, len(bsp.OCCLUSION_MESH_INDICES), 3):
+        tri = [str(x + 1) for x in bsp.OCCLUSION_MESH_INDICES[i:i + 3]]
+        out.append(f"f {' '.join(tri)}")
+    return "\n".join(out)
+
+
+def get_brush_sides(bsp, brush_index: int) -> Dict[str, Any]:
+    if brush_index > len(bsp.CM_BRUSHES):
+        raise IndexError("brush index out of range")
+    out = dict()
+    brush = bsp.CM_BRUSHES[brush_index]
+    first = 6 * brush.index + brush.brush_side_offset
+    last = first + 6 + brush.num_plane_offsets
+    out["properties"] = bsp.CM_BRUSH_SIDE_PROPERTIES[first:last]
+    out["texture_vectors"] = bsp.CM_BRUSH_SIDE_TEXTURE_VECTORS[first:last]
+    out["textures"] = [p & BrushSideProperty.MASK_TEXTURE_DATA for p in out["properties"]]
+    out["textures"] = [bsp.TEXTURE_DATA_STRING_DATA[bsp.TEXTURE_DATA[tdi].name_index] for tdi in out["textures"]]
+    # TODO: planes: axial can be generated pretty easily, but others must be indexed (via plane_offsets?)
+    origin = vector.vec3(*brush.origin)
+    extents = vector.vec3(*brush.extents)
+    mins, maxs = origin - extents, origin + extents
+    brush_planes = list()  # [(normal: vec3, distance: float)]
+    for axis, min_dist, max_dist in zip("xyz", mins, maxs):
+        brush_planes.append((vector.vec3(**{axis: 1}), max_dist))
+        brush_planes.append((vector.vec3(**{axis: -1}), -min_dist))
+    # TODO: indexed planes
+    out["planes"] = brush_planes + [...] * brush.num_plane_offsets
+    return out
+
+
+def get_brush_bevel_planes(bsp, brush_index: int) -> List[Tuple[vector.vec3, float]]:
+    # NOTE: distance is accurate within ~1.15e-07
+    if brush_index > len(bsp.CM_BRUSHES):
+        raise IndexError("brush index out of range")
+    out = list()
+    # ^ [(normal: vec3, distance: float)]
+    brush = bsp.CM_BRUSHES[brush_index]
+    origin = -vector.vec3(*brush.origin)  # inverted for some reason? prob bad math
+    extents = vector.vec3(*brush.extents)
+    mins, maxs = origin - extents, origin + extents
+    # assemble bevel brush sides in order: -X+Y -X-Y +X-Y +X+Y
+    # NOTE: this is the bevel plane order for all 3 brushes in r2's mp_lobby
+    # -- 6x axial planes for fog volume / skybox then 3x bevel planes
+    seq = ((-1, +1), (-1, -1), (+1, -1), (+1, +1))
+    x, y = {-1: mins.x, +1: maxs.x}, {-1: mins.y, +1: maxs.y}
+    half_sqrt_2 = math.sqrt(2) / 2
+    for x_scalar, y_scalar in seq:
+        normal = vector.vec3(half_sqrt_2 * x_scalar, half_sqrt_2 * y_scalar)
+        edge_vertex = vector.vec3(x[x_scalar], y[y_scalar])
+        distance = vector.dot(edge_vertex, normal)
+        out.append((normal, distance))
+    return out
 
 
 # "debug" methods for investigating the compile process
@@ -778,7 +1140,7 @@ def debug_Mesh_stats(bsp):
             material_sort = bsp.MATERIAL_SORT[mesh.material_sort]
             texture_data = bsp.TEXTURE_DATA[material_sort.texture_data]
             texture_name = bsp.TEXTURE_DATA_STRING_DATA[texture_data.name_index]
-            vertex_lump = (Flags(mesh.flags) & Flags.MASK_VERTEX).name
+            vertex_lump = (MeshFlags(mesh.flags) & MeshFlags.MASK_VERTEX).name
             indices = set(bsp.MESH_INDICES[mesh.first_mesh_index:mesh.first_mesh_index + mesh.num_triangles * 3])
             _min, _max = min(indices), max(indices)
             _range = f"({_min}->{_max})" if indices == {*range(_min, _max + 1)} else indices
@@ -788,4 +1150,5 @@ def debug_Mesh_stats(bsp):
 methods = [vertices_of_mesh, vertices_of_model,
            replace_texture, find_mesh_by_texture, get_mesh_texture,
            search_all_entities, shared.worldspawn_volume, shadow_meshes_as_obj,
+           occlusion_mesh_as_obj, get_brush_sides, get_brush_bevel_planes,
            debug_TextureData, debug_unused_TextureData, debug_Mesh_stats]

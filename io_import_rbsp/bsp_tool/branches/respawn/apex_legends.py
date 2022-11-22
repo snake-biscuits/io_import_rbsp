@@ -3,6 +3,7 @@ from typing import List
 
 from .. import base
 from .. import shared
+from .. import vector
 from ..valve import source
 from . import titanfall
 from . import titanfall2
@@ -14,10 +15,11 @@ BSP_VERSION = 47
 
 launch = "depot/r5launch/game/r2/maps"
 staging = "depot/r5staging/game/r2/maps"
-r5100 = "depot/r5-100/game/r2/maps"
-r5101 = "depot/r5-101/game/r2/maps"
-r5110 = "depot/r5-110/game/r2/maps"
-r5111 = "depot/r5-111/game/r2/maps"
+r5_100 = "depot/r5-100/game/r2/maps"
+r5_101 = "depot/r5-101/game/r2/maps"
+r5_110 = "depot/r5-110/game/r2/maps"
+r5_111 = "depot/r5-111/game/r2/maps"
+r5_131 = "depot/r5-131/game/r2/maps"
 
 GAME_PATHS = {"Apex Legends": "ApexLegends/maps",
               "Apex Legends: Season 2 - Battle Charge": "ApexLegends/season2/maps",
@@ -25,30 +27,32 @@ GAME_PATHS = {"Apex Legends": "ApexLegends/maps",
               "Apex Legends: Season 3 - Meltdown (launch)": f"ApexLegends/season3/{launch}",
               "Apex Legends: Season 3 - Meltdown (staging)": f"ApexLegends/season3/{staging}",
               "Apex Legends: Season 3 - Meltdown [30 Oct Patch]": "ApexLegends/season3_30oct19/maps",
-              "Apex Legends: Season 3 - Meltdown [30 Oct Patch] (launch)": f"ApexLegends/season3_30oct19/{launch}",
-              "Apex Legends: Season 3 - Meltdown [30 Oct Patch] (staging)": f"ApexLegends/season3_30oct19/{staging}",
-              "Apex Legends: Season 3 - Meltdown [3 Dec Patch]": "ApexLegends/season3_3dec19/maps",
-              "Apex Legends: Season 3 - Meltdown [3 Dec Patch] (launch)": f"ApexLegends/season3_3dec19/{launch}",
-              "Apex Legends: Season 3 - Meltdown [3 Dec Patch] (staging)": f"ApexLegends/season3_3dec19/{staging}",
+              "Apex Legends: Season 3 - Meltdown [30 Oct Patch] (launch)": f"ApexLegends/season3/30oct19/{launch}",
+              "Apex Legends: Season 3 - Meltdown [30 Oct Patch] (staging)": f"ApexLegends/season3/30oct19/{staging}",
+              "Apex Legends: Season 3 - Meltdown [3 Dec Patch]": "ApexLegends/season3/3dec19/maps",
+              "Apex Legends: Season 3 - Meltdown [3 Dec Patch] (launch)": f"ApexLegends/season3/3dec19/{launch}",
+              "Apex Legends: Season 3 - Meltdown [3 Dec Patch] (staging)": f"ApexLegends/season3/3dec19/{staging}",
               "Apex Legends: Season 5 - Fortune's Favor": "ApexLegends/season5/maps",
               "Apex Legends: Season 8 - Mayhem": "ApexLegends/season8/maps",
               "Apex Legends: Season 9 - Legacy": "ApexLegends/season9/maps",
-              "Apex Legends: Season 10 - Emergence [3 Aug Patch]": "ApexLegends/season10_3aug21/maps/",
-              "Apex Legends: Season 10 - Emergence [10 Aug Patch]": "ApexLegends/season10_10aug21/maps/",
-              "Apex Legends: Season 10 - Emergence [10 Aug Patch] (100)": f"ApexLegends/season10_10aug21/{r5100}",
-              "Apex Legends: Season 10 - Emergence [14 Sep Patch]": "ApexLegends/season10_14sep21/maps/",
-              "Apex Legends: Season 10 - Emergence [14 Sep Patch] (100)": f"ApexLegends/season10_14sep21/{r5100}",
-              "Apex Legends: Season 10 - Emergence [14 Sep Patch] (101)": f"ApexLegends/season10_14sep21/{r5101}",
-              "Apex Legends: Season 10 - Emergence [24 Sep Patch]": "ApexLegends/season10_24sep21/maps/",
-              "Apex Legends: Season 10 - Emergence [24 Sep Patch] (100)": f"ApexLegends/season10_24sep21/{r5100}",
-              "Apex Legends: Season 10 - Emergence [24 Sep Patch] (101)": f"ApexLegends/season10_24sep21/{r5101}",
+              "Apex Legends: Season 10 - Emergence [3 Aug Patch]": "ApexLegends/season10/3aug21/maps/",
+              "Apex Legends: Season 10 - Emergence [10 Aug Patch]": "ApexLegends/season10/10aug21/maps/",
+              "Apex Legends: Season 10 - Emergence [10 Aug Patch] (100)": f"ApexLegends/season10/10aug21/{r5_100}",
+              "Apex Legends: Season 10 - Emergence [14 Sep Patch]": "ApexLegends/season10/14sep21/maps/",
+              "Apex Legends: Season 10 - Emergence [14 Sep Patch] (100)": f"ApexLegends/season10/14sep21/{r5_100}",
+              "Apex Legends: Season 10 - Emergence [14 Sep Patch] (101)": f"ApexLegends/season10/14sep21/{r5_101}",
+              "Apex Legends: Season 10 - Emergence [24 Sep Patch]": "ApexLegends/season10/24sep21/maps/",
+              "Apex Legends: Season 10 - Emergence [24 Sep Patch] (100)": f"ApexLegends/season10/24sep21/{r5_100}",
+              "Apex Legends: Season 10 - Emergence [24 Sep Patch] (101)": f"ApexLegends/season10/24sep21/{r5_101}",
               "Apex Legends: Season 11 - Escape": "ApexLegends/season11/maps",
-              "Apex Legends: Season 11 - Escape (110)": f"ApexLegends/season11/{r5110}",
-              "Apex Legends: Season 11 - Escape [6 Nov Patch]": "ApexLegends/season11_6nov21/maps",
-              "Apex Legends: Season 11 - Escape [6 Nov Patch] (110)": f"ApexLegends/season11_6nov21/{r5110}",
-              "Apex Legends: Season 11 - Escape [19 Nov Patch]": "ApexLegends/season11_19nov21/maps",
-              "Apex Legends: Season 11 - Escape [19 Nov Patch] (110)": f"ApexLegends/season11_19nov21/{r5110}",
-              "Apex Legends: Season 11 - Escape [19 Nov Patch] (111)": f"ApexLegends/season11_19nov21/{r5111}"}
+              "Apex Legends: Season 11 - Escape (110)": f"ApexLegends/season11/{r5_110}",
+              "Apex Legends: Season 11 - Escape [6 Nov Patch]": "ApexLegends/season11/6nov21/maps",
+              "Apex Legends: Season 11 - Escape [6 Nov Patch] (110)": f"ApexLegends/season11/6nov21/{r5_110}",
+              "Apex Legends: Season 11 - Escape [19 Nov Patch]": "ApexLegends/season11/19nov21/maps",
+              "Apex Legends: Season 11 - Escape [19 Nov Patch] (110)": f"ApexLegends/season11/19nov21/{r5_110}",
+              "Apex Legends: Season 11 - Escape [19 Nov Patch] (111)": f"ApexLegends/season11/19nov21/{r5_111}",
+              "Apex Legends: Season 13 - Saviors": "ApexLegends/season13/10mar22/maps",
+              "Apex Legends: Season 13 - Saviors [Awaken] (131)": f"ApexLegends/season13/21jun22/{r5_131}"}
 
 GAME_VERSIONS = {"Apex Legends": 47,
                  "Apex Legends: Season 7 - Ascension": 48,  # Olympus
@@ -56,7 +60,8 @@ GAME_VERSIONS = {"Apex Legends": 47,
                  "Apex Legends: Season 10 - Emergence": 50,  # Arenas: Encore / SkyGarden
                  "Apex Legends: Season 11 - Escape [19 Nov Patch] (110)": 49,
                  "Apex Legends: Season 11 - Escape [19 Nov Patch] (111)": (49, 1),
-                 "Apex Legends: Season 11 - Escape [19 Nov Patch]": (50, 1)}
+                 "Apex Legends: Season 11 - Escape [19 Nov Patch]": (50, 1),
+                 "Apex Legends: Season 13 - Saviors": (51, 1)}
 
 
 class LUMP(enum.Enum):
@@ -174,7 +179,7 @@ class LUMP(enum.Enum):
     PORTAL_VERTEX_EDGES = 0x006F
     PORTAL_VERTEX_REFERENCES = 0x0070
     PORTAL_EDGE_REFERENCES = 0x0071
-    PORTAL_EDGE_INTERSECT_EDGE = 0x0072
+    PORTAL_EDGE_INTERSECT_AT_EDGE = 0x0072
     PORTAL_EDGE_INTERSECT_AT_VERTEX = 0x0073
     PORTAL_EDGE_INTERSECT_HEADER = 0x0074
     OCCLUSION_MESH_VERTICES = 0x0075
@@ -187,7 +192,7 @@ class LUMP(enum.Enum):
     SHADOW_MESH_OPAQUE_VERTICES = 0x007C
     SHADOW_MESH_ALPHA_VERTICES = 0x007D
     SHADOW_MESH_INDICES = 0x007E
-    SHADOW_MESH_MESHES = 0x007F
+    SHADOW_MESHES = 0x007F
 
 
 LumpHeader = source.LumpHeader
@@ -225,23 +230,24 @@ LumpHeader = source.LumpHeader
 #   CM_UNIQUE_CONTENTS
 #   CM_BRUSHES
 #   CM_BRUSH_SIDE_PLANE_OFFSETS
-#   CM_BRUSH_SIDE_PROPS
-#   CM_BRUSH_TEX_VECS
+#   CM_BRUSH_SIDE_PROPERTIES
+#   CM_BRUSH_SIDE_TEXTURE_VECTORS
 #   TRICOLL_BEVEL_STARTS
 
 # a rough map of the relationships between lumps:
 # Model -> Mesh -> MaterialSort -> TextureData -> SurfaceName
 #                             \--> VertexReservedX
 #                              \-> MeshIndex?
-
-# MeshBounds & Mesh (must have equal number of each)
-# CM_GRID is linked to mesh bounds?
+# MeshBounds & Mesh are parallel
+# NOTE: parallel means each entry is paired with an entry of the same index in the parallel lump
+# -- this means you can collect only the data you need, but increases the chance of storing redundant data
 
 # VertexReservedX -> Vertex
 #                \-> VertexNormal
 
-# ??? -> ShadowMeshIndices -?> ShadowMesh -> ???
-# ??? -> Brush -?> Plane
+# ShadowEnvironment -> ShadowMesh -> ShadowMeshIndices -> ShadowMeshOpaqueVertex
+#                                                    \-?> ShadowMeshAlphaVertex
+# ShadowEnvironments are indexed by entities (light_environment(_volume) w/ lightEnvironmentIndex key)
 
 # LightmapHeader -> LIGHTMAP_DATA_SKY
 #               \-> LIGHTMAP_DATA_REAL_TIME_LIGHTS
@@ -266,7 +272,35 @@ LumpHeader = source.LumpHeader
 
 
 # classes for lumps, in alphabetical order:
-# NOTE: LightmapHeader.count doesn't look like a count, quite off in general
+class CellAABBNode(base.Struct):  # LUMP 119 (0077)
+    """Identified by Fifty#8113"""
+    # NOTE: the struct length & positions of mins & maxs take advantage of SIMD 128-bit registers
+    mins: List[float]
+    children: int  # bitfield
+    # if children.count == 0, children.flags == 64
+    maxs: List[float]
+    unknown: int  # likely flags / metadata; might index ObjReferences?
+    __slots__ = ["mins", "child_data",
+                 "maxs", "unknown"]
+    _format = "3fI3fI"
+    # 3FI3fI is a common pattern for Respawn AABB based objects
+    # since you can pipe XYZ into SIMD registers quickly
+    # .w ints contain metadata & flags (see Extreme SIMD GDC Talk / Notes)
+    _arrays = {"mins": [*"xyz"], "maxs": [*"xyz"]}
+    _bitfields = {"children": {"flags": 8, "first": 16, "count": 8}}
+    _classes = {"mins": vector.vec3, "maxs": vector.vec3}  # TODO: "children.flags": CellAABBNodeFlags
+
+
+# NOTE: only one 36 byte entry per file
+class LevelInfo(base.Struct):  # LUMP 123 (007B)
+    unknown: List[int]  # possibly linked to mesh flags in worldspawn?
+    num_static_props: int  # should match len(bsp.GAME_LUMP.sprp.props) [UNTESTED]
+    sun_angle: List[float]  # sun angle vector matching last ShadowEnvironment's light_environment if r2
+    num_entity_models: int  # matches num_models in .ent file headers ("ENTITY02 num_models=X")
+    __slots__ = ["unknown", "num_static_props", "sun_angle", "num_entity_models"]
+    _format = "5I3fI"
+    _arrays = {"unknown": 4, "sun_angle": [*"xyz"]}
+
 
 class MaterialSort(base.Struct):  # LUMP 82 (0052)
     texture_data: int  # index of this MaterialSort's TextureData
@@ -285,10 +319,10 @@ class Mesh(base.Struct):  # LUMP 80 (0050)
     # num_vertices: int
     unknown: List[int]
     material_sort: int  # index of this Mesh's MaterialSort
-    flags: int  # Flags(mesh.flags & Flags.MASK_VERTEX).name == "VERTEX_RESERVED_X"
+    flags: int  # MeshFlags(mesh.flags & MeshFlags.MASK_VERTEX).name == "VERTEX_RESERVED_X"
     __slots__ = ["first_mesh_index", "num_triangles", "unknown", "material_sort", "flags"]
-    _format = "IHh3ihHI"  # 28 bytes
-    _arrays = {"unknown": 5}
+    _format = "IH8hHI"  # 28 bytes
+    _arrays = {"unknown": 8}
 
 
 class Model(base.Struct):  # LUMP 14 (000E)
@@ -389,29 +423,31 @@ def ApexSPRP(raw_lump):
 BASIC_LUMP_CLASSES = titanfall2.BASIC_LUMP_CLASSES.copy()
 
 LUMP_CLASSES = titanfall2.LUMP_CLASSES.copy()
-LUMP_CLASSES.update({"LIGHTMAP_HEADERS":    {0: titanfall.LightmapHeader},
-                     "MATERIAL_SORT":       {0: MaterialSort},
-                     "MESHES":              {0: Mesh},
-                     "MODELS":              {0: Model},
-                     "PACKED_VERTICES":     {0: PackedVertex},
-                     "PLANES":              {0: titanfall.Plane},
-                     "SHADOW_MESHES":       {0: ShadowMesh},
-                     "TEXTURE_DATA":        {0: TextureData},
-                     "VERTEX_BLINN_PHONG":  {0: VertexBlinnPhong},
-                     "VERTEX_LIT_BUMP":     {0: VertexLitBump},
-                     "VERTEX_LIT_FLAT":     {0: VertexLitFlat},
-                     "VERTEX_UNLIT":        {0: VertexUnlit},
-                     "VERTEX_UNLIT_TS":     {0: VertexUnlitTS}})
+LUMP_CLASSES.update({"CELL_AABB_NODES":    {0: CellAABBNode},
+                     "LIGHTMAP_HEADERS":   {0: titanfall.LightmapHeader},
+                     "MATERIAL_SORT":      {0: MaterialSort},
+                     "MESHES":             {0: Mesh},
+                     "MODELS":             {0: Model},
+                     "PACKED_VERTICES":    {0: PackedVertex},
+                     "PLANES":             {0: titanfall.Plane},
+                     "SHADOW_MESHES":      {0: ShadowMesh},
+                     "TEXTURE_DATA":       {0: TextureData},
+                     "VERTEX_BLINN_PHONG": {0: VertexBlinnPhong},
+                     "VERTEX_LIT_BUMP":    {0: VertexLitBump},
+                     "VERTEX_LIT_FLAT":    {0: VertexLitFlat},
+                     "VERTEX_UNLIT":       {0: VertexUnlit},
+                     "VERTEX_UNLIT_TS":    {0: VertexUnlitTS}})
 
 SPECIAL_LUMP_CLASSES = titanfall2.SPECIAL_LUMP_CLASSES.copy()
 SPECIAL_LUMP_CLASSES.pop("CM_GRID")
 SPECIAL_LUMP_CLASSES.pop("TEXTURE_DATA_STRING_DATA")
-SPECIAL_LUMP_CLASSES.update({"SURFACE_NAMES": {0: shared.TextureDataStringData}})
+SPECIAL_LUMP_CLASSES.update({"LEVEL_INFO":    {0: LevelInfo.from_bytes},
+                             "SURFACE_NAMES": {0: shared.TextureDataStringData}})
 
 
 GAME_LUMP_HEADER = source.GameLumpHeader
 
-GAME_LUMP_CLASSES = {"sprp": {bsp_version: ApexSPRP for bsp_version in (47, 48, 49, 50)}}
+GAME_LUMP_CLASSES = {"sprp": {bsp_version: ApexSPRP for bsp_version in (47, 48, 49, 50, 51)}}
 
 
 # branch exclusive methods, in alphabetical order:
@@ -447,7 +483,7 @@ def debug_Mesh_stats(bsp):
             mesh = bsp.MESHES[j]
             material_sort = bsp.MATERIAL_SORT[mesh.material_sort]
             texture_name = bsp.get_TextureData_SurfaceName(material_sort.texture_data)
-            vertex_lump = (titanfall.Flags(mesh.flags) & titanfall.Flags.MASK_VERTEX).name
+            vertex_lump = (titanfall.MeshFlags(mesh.flags) & titanfall.MeshFlags.MASK_VERTEX).name
             indices = set(bsp.MESH_INDICES[mesh.first_mesh_index:mesh.first_mesh_index + mesh.num_triangles * 3])
             _min, _max = min(indices), max(indices)
             _range = f"({_min}->{_max})" if indices == {*range(_min, _max + 1)} else indices

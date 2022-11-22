@@ -2,7 +2,9 @@
 # http://hlbsp.sourceforge.net/index.php?content=bspdef
 # https://valvedev.info/tools/bsptwomap/
 import enum
+from typing import List
 
+from .. import base
 from ..id_software import quake
 # NOTE: GoldSrc was forked from IdTech 2 during Quake II development
 # -- so some elements of both quake & quake2 formats are present
@@ -103,20 +105,26 @@ class Contents(enum.IntFlag):  # src/public/bspflags.h
 
 
 # classes for lumps, in alphabetical order:
-# TODO: Model
-# TODO: Node
+class Model(base.Struct):  # LUMP 14
+    bounds: List[List[float]]
+    # bounds.mins: List[float]  # xyz
+    # bounds.maxs: List[float]  # xyz
+    origin: List[float]  # xyz
+    node: List[int]  # 4x node index? [MAX_MAP_HULLS]
+    visleaves: int  # "not including the solid leaf 0"
+    first_face: int  # index to the first Face in this Model
+    num_faces: int  # number of faces after first_face in this Model
+    __slots__ = ["bounds", "origin", "node", "visleaves", "first_face", "num_faces"]
+    _format = "9f7i"
+    _arrays = {"bounds": {"mins": [*"xyz"], "maxs": [*"xyz"]}, "origin": [*"xyz"], "node": 4}
 
-# classes for special lumps, in alphabetical order:
-# TODO: make a special LumpCLass for MipTextures
-# -- any lump containing offsets needs it's own BspLump subclass
-# {"TEXTURES": lambda raw_lump: lump.MipTextures(quake.MipTexture, raw_lump)}
 
 # {"LUMP_NAME": {version: LumpClass}}
 BASIC_LUMP_CLASSES = quake.BASIC_LUMP_CLASSES.copy()
 
 LUMP_CLASSES = quake.LUMP_CLASSES.copy()
-LUMP_CLASSES.pop("MODELS")
-LUMP_CLASSES.pop("NODES")
+LUMP_CLASSES.update({"MODELS": Model,
+                     "NODES": quake.ClipNode})
 
 SPECIAL_LUMP_CLASSES = quake.SPECIAL_LUMP_CLASSES.copy()
 

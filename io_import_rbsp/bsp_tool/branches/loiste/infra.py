@@ -4,6 +4,8 @@ from ..valve import sdk_2013
 from ..valve import source
 
 
+FILE_MAGIC = b"VBSP"
+
 BSP_VERSION = 22
 
 GAME_PATHS = {"INFRA": "infra/infra"}
@@ -96,6 +98,6 @@ SPECIAL_LUMP_CLASSES = sdk_2013.SPECIAL_LUMP_CLASSES.copy()
 
 GAME_LUMP_HEADER = sdk_2013.GAME_LUMP_HEADER
 
-GAME_LUMP_CLASSES = sdk_2013.GAME_LUMP_CLASSES.copy()
+GAME_LUMP_CLASSES = {"sprp": sdk_2013.GAME_LUMP_CLASSES["sprp"].copy()}
 
 methods = [*sdk_2013.methods]
