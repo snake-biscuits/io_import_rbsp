@@ -64,6 +64,7 @@ class ImportRBSP(Operator, ImportHelper):
         else:
             master_collection = bpy.data.collections[bsp.filename]
         # materials
+        # TODO: locate Legion+ / vmt materials folder and build shaders
         materials = importer.materials.base_colours(bsp)
         # if bsp.branch == bsp_tool.branches.respawn.titanfall2:  # HACK
         #     materials = importer.materials.textured(bsp)
@@ -72,7 +73,7 @@ class ImportRBSP(Operator, ImportHelper):
             # TODO: rename Model[0] "worldspawn"
             # TODO: skybox collection
             # TODO: load specific model / mesh (e.g. worldspawn only, skip tool brushes etc.)
-            importer.geometry(bsp, master_collection, materials)
+            importer.geometry.split_meshes(bsp, master_collection, materials)
         # entities
         # TODO: get a user defined palette in here (use a property group?)
         # -- FloatVectorProperty(subtype="COLOR")  # ?
