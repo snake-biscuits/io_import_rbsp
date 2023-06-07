@@ -5,13 +5,13 @@
 from __future__ import annotations
 import enum
 import io
-import itertools
 import struct
 from typing import List
-import warnings
 
+from ... import lumps
 from .. import base
 from .. import shared
+from .. import valve_physics
 from .. import vector
 from ..id_software import quake
 from ..id_software import quake2
@@ -100,23 +100,29 @@ class LumpHeader(base.MappedArray):
     _mapping = ["offset", "length", "version", "fourCC"]
     _format = "4I"
 
-# changes from GoldSrc -> Source:
-# MipTexture.flags -> TextureInfo.flags (Surface enum)
+
+# known lump changes from GoldSrc -> Source:
+
+# MipTextures -> TextureInfo & TextureData -> TextureDataStringTable/Data
+# NOTE: GoldSrc MipTextures didn't store textures, just gave the texture name & flags
 
 
 # a rough map of the relationships between lumps:
 
-#                                 /-> SurfEdge -> Edge -> Vertex
-# Node -> Leaf -> LeafFace -> Face -> Plane
-#                                \--> TextureInfo -> TextureData -> TextureDataStringTable
-#                                 \-> DisplacementInfo -> DisplacementVertex
+# Entity -> Model -> Node -> Leaf
+#                \-> Face
 
 # Leaf -> LeafBrush -> Brush -> BrushSide -> TextureInfo
-#                                        \-> Plane
+#     \-> LeafFace -> Face               \-> Plane
 
-# FaceID is paralell with Faces & lists Hammer ids per face
+#     /-> SurfEdge -> Edge -> Vertex
+# Face -> Plane
+#    \--> TextureInfo -> TextureData -> TextureDataStringTable
+#     \-> DisplacementInfo -> DisplacementVertex
 
-# Leaf is Parallel with LeafAmbientIndex
+# FaceID is parallel with Faces & lists Hammer ids per face
+
+# Leaf is parallel with LeafAmbientIndex
 # LeafAmbientIndex -> LeafAmbientSample
 
 # ClipPortalVertices are AreaPortal geometry [unverified]
@@ -132,14 +138,14 @@ class MIN(enum.Enum):
 class MAX(enum.Enum):
     # misc:
     CUBEMAP_SAMPLES = 1024
-    DISPLACEMENT_POWER = 4
     DISPLACEMENT_CORNER_NEIGHBORS = 4
+    DISPLACEMENT_POWER = 4
     ENTITY_KEY, ENTITY_VALUE = 32, 1024  # key value pair sizes
     LIGHTMAPS = 4  # max lightmap styles?
-    LIGHTMAP_DIMENSION_WITH_BORDER_BRUSH = 35  # "vbsp cut limit" +1 (to account for rounding errors)
     LIGHTMAP_DIMENSION_WITHOUT_BORDER_BRUSH = 32
-    LIGHTMAP_DIMENSION_WITH_BORDER_DISPLACEMENT = 128
     LIGHTMAP_DIMENSION_WITHOUT_BORDER_DISPLACEMENT = 125
+    LIGHTMAP_DIMENSION_WITH_BORDER_BRUSH = 35  # "vbsp cut limit" +1 (to account for rounding errors)
+    LIGHTMAP_DIMENSION_WITH_BORDER_DISPLACEMENT = 128
     # absolute maximum, based on previous values
     LIGHTMAP_DIMENSION_WITH_BORDER = LIGHTMAP_DIMENSION_WITH_BORDER_DISPLACEMENT
     LIGHTMAP_DIMENSION_WITHOUT_BORDER = LIGHTMAP_DIMENSION_WITHOUT_BORDER_DISPLACEMENT
@@ -259,6 +265,52 @@ class ContentsMask(enum.IntEnum):
     DEAD_SOLID = Contents.SOLID | Contents.PLAYER_CLIP | Contents.WINDOW | Contents.GRATE  # unused?
 
 
+class DisplacementChildNode(enum.Enum):
+    """These can be used to index g_ChildNodeIndexMul"""
+    UPPER_RIGHT = 0
+    UPPER_LEFT = 1
+    LOWER_LEFT = 2
+    LOWER_RIGHT = 3
+
+
+class DisplacementCorner(enum.Enum):
+    """Corner indices. Used to index m_CornerNeighbors"""
+    LOWER_LEFT = 0
+    UPPER_LEFT = 1
+    UPPER_RIGHT = 2
+    LOWER_RIGHT = 3
+
+
+class DisplacementEdge(enum.Enum):  # used to index DisplacementInfo.neighbours.edges
+    """These edge indices must match the edge indices of the CCoreDispSurface"""
+    LEFT = 0
+    TOP = 1
+    RIGHT = 2
+    BOTTOM = 3
+
+
+class DisplacementSpan(enum.Enum):
+    """Where one DisplacementInfo fits on another"""
+    CORNER_TO_CORNER = 0  # 1 -> x -> 2
+    CORNER_TO_MIDPOINT = 1  # 1 -> x
+    MIDPOINT_TO_CORNER = 2  # x -> 2
+    # 1 -> x -> 2
+    # ^         ^
+    # |         |
+    # x    x    x
+    # ^         ^
+    # |         |
+    # 0 -> x -> 3
+
+
+class DisplacementOrientation(enum.Enum):
+    """Relative orientations of displacement neighbors"""
+    CCW_0 = 0
+    CCW_90 = 1
+    CCW_180 = 2
+    CCW_270 = 3
+
+
 class DisplacementFlags(enum.IntFlag):
     UNUSED = 1
     NO_PHYS = 2
@@ -355,7 +407,7 @@ class AreaPortal(base.MappedArray):  # LUMP 21
 
 class Brush(base.Struct):  # LUMP 18
     """Assumed to carry over from .vmf"""
-    first_side: int  # index into BrushSide lump
+    first_side: int  # first BrushSide of this Brush
     num_sides: int  # number of BrushSides after first_side in this Brush
     contents: Contents
     __slots__ = ["first_side", "num_sides", "contents"]
@@ -364,9 +416,9 @@ class Brush(base.Struct):  # LUMP 18
 
 
 class BrushSide(base.Struct):  # LUMP 19
-    plane: int  # index into Plane lump
-    texture_info: int  # index into TextureInfo lump
-    displacement_info: int  # index into DisplacementInfo lump
+    plane: int  # Plane this BrushSide lies on
+    texture_info: int  # TextureInfo this BrushSide uses
+    displacement_info: int  # DisplacementInfo applied to the Face derived from this BrushSide; -1 for None
     bevel: int  # bool? indicates if side is a bevel plane (BSPVERSION 7)
     __slots__ = ["plane", "texture_info", "displacement_info", "bevel"]
     _format = "H3h"
@@ -382,27 +434,65 @@ class Cubemap(base.Struct):  # LUMP 42
     _classes = {"origin": vector.vec3}
 
 
+class CornerNeighbour(base.MappedArray):  # LUMP 26
+    neighbours: List[int]  # indices of neighbouring DisplacementInfos
+    num_neighbours: int  # number of DisplacementInfos indexed; {0..4}
+    padding: int
+    _mapping = {"neighbours": 4, "num_neighbours": None, "padding": None}
+    _format = "4H2B"
+
+
+class SubNeighbour(base.MappedArray):  # LUMP 26
+    neighbour: int  # index of neighbouring DisplacementInfo; 0xFFFF for None
+    neighbour_orientation: DisplacementOrientation  # orientation of neighbour relative to self
+    span: DisplacementSpan  # where neighbour fits onto this side
+    neighbour_span: DisplacementSpan  # how this side connects to neighbour
+    padding: int
+    _mapping = ["neighbour", "neighbour_orientation", "span", "neighbour_span", "padding"]
+    _format = "H4B"
+    _classes = {"neighbour_orientation": DisplacementOrientation,
+                "span": DisplacementSpan, "neighbour_span": DisplacementSpan}
+
+
 class DisplacementInfo(base.Struct):  # LUMP 26
     """Holds the information defining a displacement"""
-    start_position: List[float]  # rough XYZ of the vertex to orient around
-    displacement_vert_start: int  # index of first DisplacementVertex
-    displacement_tri_start: int   # index of first DisplacementTriangle
-    # ^ length of sequence for each varies depending on power
+    start_position: vector.vec3  # approx coords of first corner of face
+    # nessecary to ensure order of displacement vertices
+    first_displacement_vertex: int  # index of first DisplacementVertex
+    # num_displacement_vertices: int = ((1 << power) + 1) ** 2
+    first_displacement_triangle: int  # index of first DisplacementTriangle
+    # num_diplacement_triangles: int = 2 * (1 << power) ** 2
     power: int  # level of subdivision
     flags: DisplacementFlags
     min_tesselation: int  # for tesselation shaders / triangle assembley?
-    smoothing_angle: float  # ?
+    smoothing_angle: float  # for smooth lighting
     contents: Contents
-    map_face: int  # index of Face?
-    __slots__ = ["start_position", "displacement_vert_start", "displacement_tri_start",
-                 "power", "flags", "min_tesselation", "smoothing_angle", "contents",
-                 "map_face", "lightmap_alpha_start", "lightmap_sample_position_start",
-                 "edge_neighbours", "corner_neighbours", "allowed_vertices"]
-    _format = "3f3iHhfiH2i88c10i"
-    _arrays = {"start_position": [*"xyz"], "edge_neighbours": 44,
-               "corner_neighbours": 44, "allowed_vertices": 10}
-    _classes = {"start_position": vector.vec3, "flags": DisplacementFlags, "contents": Contents}
-    # TODO: EdgeNeighbour, CornerNeighbour
+    face: int  # Face this DisplacementInfo affects / came from
+    lightmap_alpha_start: int  # TODO: figure out displacement lightmaps
+    lightmap_sample_position_start: int
+    neighbours: List[List[SubNeighbour] | List[CornerNeighbour]]
+    # neighbours.edge: List[SubNeighbour]  # x8 edge connections
+    # neighbours.corner: List[CornerNeighbour]  # x4 corner connections
+    allowed_vertices: List[int]
+    __slots__ = ["start_position", "displacement_vert_start", "displacement_tri_start", "power",
+                 "flags", "min_tesselation", "smoothing_angle", "contents", "face", "lightmap_alpha_start",
+                 "lightmap_sample_position_start", "neighbours", "allowed_vertices"]
+    _format = "3f3iHhfiH2i" + SubNeighbour._format * 8 + CornerNeighbour._format * 4 + "10i"
+    _arrays = {"start_position": [*"xyz"], "allowed_vertices": 10,
+               "neighbours": {"edge": {x: {y: SubNeighbour._mapping for y in "AB"} for x in "ABCD"},
+                              "corner": {x: CornerNeighbour._mapping for x in "ABCD"}}}
+    # TODO: clean up neighbours with {int: _mapping} mappings (generate lists)
+    _classes = {"start_position": vector.vec3, "flags": DisplacementFlags, "contents": Contents,
+                **{f"neighbours.edge.{x}.{y}": SubNeighbour for x in "ABCD" for y in "AB"},
+                **{f"neighbours.corner.{x}": CornerNeighbour for x in "ABCD"}}
+
+    @property
+    def num_displacement_vertices(self) -> int:
+        return ((1 << self.power) + 1) ** 2
+
+    @property
+    def num_displacement_triangles(self) -> int:
+        return 2 * (1 << self.power) ** 2
 
 
 class DisplacementTriangle(shared.UnsignedShort, enum.IntFlag):  # LUMP 48
@@ -424,7 +514,7 @@ class DisplacementVertex(base.Struct):  # LUMP 33
     _classes = {"normal": vector.vec3}
 
 
-class Face(base.Struct):  # LUMP 7
+class Face(base.Struct):  # LUMPS 7, 27 & 58
     """makes up Models (including worldspawn), also referenced by LeafFaces"""
     plane: int  # index into Plane lump
     side: int  # "faces opposite to the node's plane direction"
@@ -440,10 +530,10 @@ class Face(base.Struct):  # LUMP 7
     lightmap: List[vector.vec2]
     # lightmap.mins: vector.vec2  # dimensions of lightmap segment
     # lightmap.size: vector.vec2  # scalars for lightmap segment
-    original_face: int  # ORIGINAL_FACES index, -1 if this is an original face
-    num_primitives: int  # non-zero if t-juncts are present? number of Primitives; BitField
-    # num_primitives.count: int  # limit of 32768
-    # num_primitives.allow_dynamic_shadows: bool
+    original_face: int  # OriginalFace this Face came from; -1 if this is an OriginalFace
+    bitfield: int
+    # bitfield.num_primitives: int  # limit of 32768
+    # bitfield.allow_shadows: bool  # allow (dynamic?) shadows on this Face's Primitives
     first_primitive_id: int  # index of Primitive
     smoothing_groups: int  # lightmap smoothing group
     __slots__ = ["plane", "side", "on_node", "first_edge", "num_edges",
@@ -461,7 +551,9 @@ class Leaf(base.Struct):  # LUMP 10
     """Endpoint of a vis tree branch, a pocket of Faces"""
     contents: Contents
     cluster: int  # index of this Leaf's cluster (leaf group in VISIBILITY lump)
-    area_flags: base.BitField  # area & flags bitfield
+    bitfield: base.BitField  # area & flags bitfield
+    # bitfield.area  # index into Areas?
+    # bitfield.flags  # TODO: LeafFlags enum
     bounds: List[vector.vec3]  # uint16_t, very blocky
     # bounds.mins: vector.vec3
     # bounds.maxs: vector.vec3
@@ -469,24 +561,24 @@ class Leaf(base.Struct):  # LUMP 10
     num_leaf_faces: int  # number of LeafFaces
     first_leaf_brush: int  # index of first LeafBrush
     num_leaf_brushes: int  # number of LeafBrushes
-    leaf_water_data_id: int  # -1 if this leaf isn't submerged
+    leaf_water_data: int  # index into LeafWaterData; -1 if not submerged
     padding: int  # should be 0; waste of a bitfield
     cube: List[List[int]]  # CompressedLightCube; unsure about orientation / face order
     __slots__ = ["contents", "cluster", "area_flags", "bounds",
                  "first_leaf_face", "num_leaf_faces", "first_leaf_brush",
-                 "num_leaf_brushes", "leaf_water_data_id", "padding", "cube"]
+                 "num_leaf_brushes", "leaf_water_data", "padding", "cube"]
     _format = "i2H6h4H2h24B"
     _arrays = {"bounds": {"mins": [*"xyz"], "maxs": [*"xyz"]},
                "cube": {x: [*"rgbe"] for x in "ABCDEF"}}  # integer keys in _mapping would be nicer
     # TODO: map cube face names to UP, DOWN etc.
-    _bitfields = {"area_flags": {"area": 9, "flags": 7}}
+    _bitfields = {"bitfield": {"area": 9, "flags": 7}}
     _classes = {"contents": Contents, "bounds.mins": vector.vec3, "bounds.maxs": vector.vec3}
-    # TODO: CompressedLightCube (8x RGBExponent / RGBA32)
+    # TODO: CompressedLightCube (8x RGBExponent / RGBA32), "bitfield.flags": LeafFlags
 
 
 class LeafAmbientIndex(base.MappedArray):  # LUMP 52
     num_samples: int
-    first_sample: int
+    first_sample: int  # index into LeafAmbientSamples
     _format = "2h"
     _mapping = ["num_samples", "first_sample"]
 
@@ -507,9 +599,9 @@ class LeafAmbientSample(base.MappedArray):  # LUMP 56
 class LeafWaterData(base.MappedArray):  # LUMP 36
     surface_z: float  # global Z height of the water's surface
     min_z: float  # bottom of the water volume?
-    texture_data: int  # index to this LeafWaterData's TextureData
+    texture_info: int  # index to this LeafWaterData's TextureInfo
     _format = "2fI"
-    _mapping = ["surface_z", "min_z", "texture_data"]
+    _mapping = ["surface_z", "min_z", "texture_info"]
 
 
 class Model(base.Struct):  # LUMP 14
@@ -518,18 +610,19 @@ class Model(base.Struct):  # LUMP 14
     # bounds.mins: vector.vec3
     # bounds.maxs: vector.vec3
     origin: vector.vec3  # center of model, worldspawn is always at 0 0 0
-    head_node: int  # index into Node lump
+    node: int  # index into Node lump; head of all nodes containing this Model
     first_face: int  # index into Face lump
     num_faces: int  # number of Faces after first_face in this Model
-    __slots__ = ["bounds", "origin", "head_node", "first_face", "num_faces"]
+    __slots__ = ["bounds", "origin", "node", "first_face", "num_faces"]
     _format = "9f3i"
     _arrays = {"bounds": {"mins": [*"xyz"], "maxs": [*"xyz"]}, "origin": [*"xyz"]}
     _classes = {"bounds.mins": vector.vec3, "bounds.maxs": vector.vec3, "origin": vector.vec3}
 
 
 class Node(base.Struct):  # LUMP 5
-    plane: int  # index into Plane lump
+    plane: int  # Plane that splits this Node
     children: List[int]  # 2 indices; Node if positive, Leaf if negative
+    # TODO: match children to sides of Plane
     bounds: List[vector.vec3]  # uint16_t, very blocky
     # bounds.mins: vector.vec3
     # bounds.maxs: vector.vec3
@@ -543,6 +636,7 @@ class Node(base.Struct):  # LUMP 5
     _format = "3i6h2H2h"
     _arrays = {"children": 2, "bounds": {"mins": [*"xyz"], "maxs": [*"xyz"]}}
     _classes = {"bounds.mins": vector.vec3, "bounds.maxs": vector.vec3}
+    # TODO: ivec3 bounds & AABB bounds class
 
 
 class Overlay(base.Struct):  # LUMP 45
@@ -570,13 +664,14 @@ class OverlayFade(base.MappedArray):  # LUMP 60
 
 
 class Primitive(base.MappedArray):  # LUMP 37
-    type: int
+    type: PrimitiveType
     first_index: int  # index into PrimitiveIndex lump
     num_indices: int
     first_vertex: int  # index into PrimitiveVertices lump
     num_vertices: int
     _mapping = ["type", "first_index", "num_indices", "first_vertex", "num_vertices"]
     _format = "B4H"
+    _classes = {"type": PrimitiveType}
 
 
 class TextureData(base.Struct):  # LUMP 2
@@ -601,9 +696,12 @@ class TextureInfo(base.Struct):  # LUMP 6
     texture_data: int  # index of TextureData
     __slots__ = ["texture", "lightmap", "flags", "texture_data"]
     _format = "16f2i"
-    _arrays = {"texture": {"s": [*"xyz", "offset"], "t": [*"xyz", "offset"]},
-               "lightmap": {"s": [*"xyz", "offset"], "t": [*"xyz", "offset"]}}
-    _classes = {"flags": Surface}
+    _arrays = {"texture": {"s": {"vector": [*"xyz"], "offset": None},
+                           "t": {"vector": [*"xyz"], "offset": None}},
+               "lightmap": {"s": {"vector": [*"xyz"], "offset": None},
+                            "t": {"vector": [*"xyz"], "offset": None}}}
+    _classes = {"flags": Surface, "texture.s.vector": vector.vec3, "texture.t.vector": vector.vec3,
+                "lightmap.s.vector": vector.vec3, "lightmap.t.vector": vector.vec3}
     # TODO: vmf_tool TextureVector (singular) class -> TextureVectors w/ .pos_to_uv(vec3) method
 
 
@@ -626,7 +724,6 @@ class WaterOverlay(base.Struct):  # LUMP 50
 
 
 class WorldLight(base.Struct):  # LUMP 15
-    """A static light"""
     origin: vector.vec3  # origin point of this light source
     intensity: vector.vec3  # brightness scalar?
     normal: vector.vec3  # light direction (used by EmitType.SURFACE & EmitType.SPOTLIGHT)
@@ -644,7 +741,6 @@ class WorldLight(base.Struct):  # LUMP 15
     constant: float
     linear: float
     quadratic: float
-    # ^ these factor into some equation...
     flags: WorldLightFlags
     texture_info: int  # index of TextureInfo
     owner: int  # parent entity ID
@@ -667,63 +763,12 @@ class GameLumpHeader(base.MappedArray):
     # -- dplt: Detail Prop Lighting
     # -- dprp: Detail Props (procedural grass on displacements)
     # -- sprp: Static Props
-    flags: int  # use unknown
+    flags: int  # barely used; inconsistently indicates compression?
     version: int
     offset: int
     length: int
     _mapping = ["id", "flags", "version", "offset", "length"]
     _format = "4s2H2i"
-
-
-class GameLump_SPRP:  # sprp GameLump (LUMP 35)
-    """use `lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropvXX)` to implement"""
-    StaticPropClass: object  # StaticPropvXX
-    model_names: List[str]
-    leaves: List[int]
-    props: List[object] | List[bytes]  # List[StaticPropClass]
-
-    def __init__(self, raw_sprp_lump: bytes, StaticPropClass: object, endianness: str = "little"):
-        self.endianness = endianness
-        sprp_lump = io.BytesIO(raw_sprp_lump)
-        model_name_count = int.from_bytes(sprp_lump.read(4), self.endianness)
-        model_names = struct.iter_unpack("128s", sprp_lump.read(128 * model_name_count))
-        setattr(self, "model_names", [t[0].replace(b"\0", b"").decode() for t in model_names])
-        leaf_count = int.from_bytes(sprp_lump.read(4), self.endianness)
-        leaves = itertools.chain(*struct.iter_unpack("H", sprp_lump.read(2 * leaf_count)))
-        setattr(self, "leaves", list(leaves))
-        prop_count = int.from_bytes(sprp_lump.read(4), self.endianness)
-        # TODO: throw an error if the remaining props length divides into a different length
-        # -- in future: use this to detect a different branch script / format
-        # NOTE: SFM sprp v10 is 72 bytes, not the expected 76
-        raw_props = sprp_lump.read()
-        StaticPropClass_size = struct.calcsize(getattr(StaticPropClass, "_format", ""))
-        props_byte_size = StaticPropClass_size * prop_count
-        if props_byte_size != len(raw_props):
-            warnings.warn(UserWarning("StaticPropClass format is unknown / doesn't match lump size"))
-            StaticPropClass = None
-        if prop_count == 0:
-            setattr(self, "props", [])
-        elif StaticPropClass is None:
-            setattr(self, "props", [])
-            prop_size = len(raw_props) // prop_count
-            assert len(raw_props) % prop_count == 0, "SPRP.props does not divide evenly by prop_count"
-            for i in range(prop_count):
-                self.props.append(raw_props[i * prop_size:(i + 1) * prop_size])
-        else:
-            props = struct.iter_unpack(StaticPropClass._format, sprp_lump.read(props_byte_size))
-            setattr(self, "props", list(map(StaticPropClass.from_tuple, props)))
-
-    def as_bytes(self) -> bytes:
-        if len(self.props) > 0:
-            prop_bytes = [struct.pack(self.StaticPropClass._format, *p.as_tuple()) for p in self.props]
-        else:
-            prop_bytes = []
-        return b"".join([int.to_bytes(len(self.model_names), 4, self.endianness),
-                         *[struct.pack("128s", n) for n in self.model_names],
-                         int.to_bytes(len(self.leaves), 4, self.endianness),
-                         *[struct.pack("H", L) for L in self.leaves],
-                         int.to_bytes(len(self.props), 4, self.endianness),
-                         *prop_bytes])
 
 
 class StaticPropv4(base.Struct):  # sprp GAME LUMP (LUMP 35) [version 4]
@@ -744,8 +789,49 @@ class StaticPropv4(base.Struct):  # sprp GAME LUMP (LUMP 35) [version 4]
     _arrays = {"origin": [*"xyz"], "angles": [*"yzx"], "fade_distance": ["min", "max"],
                "lighting_origin": [*"xyz"]}
     _classes = {"origin": vector.vec3, "solid_mode": StaticPropCollision, "flags": StaticPropFlags,
-                "lighting_origin": vector.vec3}
-    # TODO: angles QAngle
+                "lighting_origin": vector.vec3}  # TODO: angles QAngle
+
+
+class GameLump_SPRPv4:  # sprp GameLump (LUMP 35)
+    StaticPropClass: object = StaticPropv4
+    endianness: str = "little"  # for x360
+    model_names: List[str]
+    leaves: List[int]
+    props: List[object]  # List[StaticPropClass]
+
+    def __init__(self):
+        self.model_names = list()
+        self.leaves = list()
+        self.props = list()
+
+    @classmethod
+    def from_bytes(cls, raw_lump: bytes):
+        sprp_lump = io.BytesIO(raw_lump)
+        out = cls()
+        model_name_count = int.from_bytes(sprp_lump.read(4), cls.endianness)
+        out.model_names = [sprp_lump.read(128).replace(b"\0", b"").decode() for i in range(model_name_count)]
+        leaf_count = int.from_bytes(sprp_lump.read(4), cls.endianness)
+        out.leaves = [int.from_bytes(sprp_lump.read(2), cls.endianness) for i in range(leaf_count)]
+        prop_count = int.from_bytes(sprp_lump.read(4), cls.endianness)
+        out.props = lumps.BspLump.from_count(sprp_lump, prop_count, cls.StaticPropClass)
+        tail = sprp_lump.read()
+        if len(tail) > 0:
+            possible_sizeof = (len(b"".join([p.as_bytes() for p in out.props])) + len(tail)) / prop_count
+            raise RuntimeError(f"tail of {len(tail)} bytes; possible_sizeof={possible_sizeof}")
+        return out
+
+    def as_bytes(self) -> bytes:
+        assert all([isinstance(p, self.StaticPropClass) for p in self.props])
+        leaves_format = {"little": "<H", "big": ">H"}[self.endianness]
+        return b"".join([int.to_bytes(len(self.model_names), 4, self.endianness),
+                         *[struct.pack("128s", n) for n in self.model_names],
+                         int.to_bytes(len(self.leaves), 4, self.endianness),
+                         *[struct.pack(leaves_format, L) for L in self.leaves],
+                         int.to_bytes(len(self.props), 4, self.endianness),
+                         *[p.as_bytes() for p in self.props]])
+
+    def get_prop_model_name(self, prop_index: int) -> str:
+        return self.model_names[self.props[prop_index].model_name]
 
 
 class StaticPropv5(base.Struct):  # sprp GAME LUMP (LUMP 35) [version 5]
@@ -768,8 +854,11 @@ class StaticPropv5(base.Struct):  # sprp GAME LUMP (LUMP 35) [version 5]
     _arrays = {"origin": [*"xyz"], "angles": [*"yzx"], "fade_distance": ["min", "max"],
                "lighting_origin": [*"xyz"]}
     _classes = {"origin": vector.vec3, "solid_mode": StaticPropCollision, "flags": StaticPropFlags,
-                "lighting_origin": vector.vec3}
-    # TODO: angles QAngle
+                "lighting_origin": vector.vec3}  # TODO: angles QAngle
+
+
+class GameLump_SPRPv5(GameLump_SPRPv4):  # sprp GameLump (LUMP 35)
+    StaticPropClass = StaticPropv5
 
 
 class StaticPropv6(base.Struct):  # sprp GAME LUMP (LUMP 35) [version 6]
@@ -793,8 +882,11 @@ class StaticPropv6(base.Struct):  # sprp GAME LUMP (LUMP 35) [version 6]
     _arrays = {"origin": [*"xyz"], "angles": [*"yzx"], "fade_distance": ["min", "max"],
                "lighting_origin": [*"xyz"], "dx_level": ["min", "max"]}
     _classes = {"origin": vector.vec3, "solid_mode": StaticPropCollision, "flags": StaticPropFlags,
-                "lighting_origin": vector.vec3}
-    # TODO: angles QAngle
+                "lighting_origin": vector.vec3}  # TODO: angles QAngle
+
+
+class GameLump_SPRPv6(GameLump_SPRPv5):  # sprp GameLump (LUMP 35)
+    StaticPropClass = StaticPropv6
 
 
 class StaticPropv7(base.Struct):  # sprp GAME LUMP (LUMP 35) [version 7]
@@ -819,8 +911,11 @@ class StaticPropv7(base.Struct):  # sprp GAME LUMP (LUMP 35) [version 7]
     _arrays = {"origin": [*"xyz"], "angles": [*"yzx"], "fade_distance": ["min", "max"],
                "lighting_origin": [*"xyz"], "dx_level": ["min", "max"], "diffuse_modulation": [*"rgba"]}
     _classes = {"origin": vector.vec3, "solid_mode": StaticPropCollision, "flags": StaticPropFlags,
-                "lighting_origin": vector.vec3}
-    # TODO: angles QAngle, diffuse_modulation RBGExponent
+                "lighting_origin": vector.vec3}  # TODO: angles QAngle, diffuse_modulation RBGExponent
+
+
+class GameLump_SPRPv7(GameLump_SPRPv6):  # sprp GameLump (LUMP 35)
+    StaticPropClass = StaticPropv7
 
 
 # {"LUMP_NAME": {version: LumpClass}}
@@ -869,17 +964,18 @@ LUMP_CLASSES = {"AREAS":                     {0: Area},
 SPECIAL_LUMP_CLASSES = {"ENTITIES":                 {0: shared.Entities},
                         "TEXTURE_DATA_STRING_DATA": {0: shared.TextureDataStringData},
                         "PAKFILE":                  {0: shared.PakFile},
-                        "PHYSICS_COLLIDE":          {0: shared.physics.CollideLump},
+                        "PHYSICS_COLLIDE":          {0: valve_physics.CollideLump},
+                        "PHYSICS_DISPLACEMENT":     {0: valve_physics.Displacement},
                         "VISIBILITY":               {0: quake2.Visibility}}
 
 
 GAME_LUMP_HEADER = GameLumpHeader
 
 # {"lump": {version: SpecialLumpClass}}
-GAME_LUMP_CLASSES = {"sprp": {4: lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropv4),
-                              5: lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropv5),
-                              6: lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropv6),
-                              7: lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropv7)}}
+GAME_LUMP_CLASSES = {"sprp": {4: GameLump_SPRPv4,
+                              5: GameLump_SPRPv5,
+                              6: GameLump_SPRPv6,
+                              7: GameLump_SPRPv7}}
 # TODO: more GameLump definitions:
 # -- https://github.com/ValveSoftware/source-sdk-2013/blob/master/sp/src/public/gamebspfile.h#L25
 
@@ -914,14 +1010,14 @@ def vertices_of_face(bsp, face_index: int) -> List[float]:
     # SurfComputeTextureCoordinate & SurfComputeLightmapCoordinate
     for P in positions:
         # texture UV
-        uv = [vector.dot(P, texture.s[:3]) + texture.s.offset,
-              vector.dot(P, texture.t[:3]) + texture.t.offset]
+        uv = [vector.dot(P, texture.s.vector) + texture.s.offset,
+              vector.dot(P, texture.t.vector) + texture.t.offset]
         uv[0] /= texture_data.view.width if texture_data.view.width != 0 else 1
         uv[1] /= texture_data.view.height if texture_data.view.height != 0 else 1
         uvs.append(vector.vec2(*uv))
         # lightmap UV
-        uv2 = [vector.dot(P, lightmap.s[:3]) + lightmap.s.offset,
-               vector.dot(P, lightmap.t[:3]) + lightmap.t.offset]
+        uv2 = [vector.dot(P, lightmap.s.vector) + lightmap.s.offset,
+               vector.dot(P, lightmap.t.vector) + lightmap.t.offset]
         if any([(face.lightmap.mins.x == 0), (face.lightmap.mins.y == 0)]):
             uv2 = [0, 0]  # invalid / no lighting
         else:
@@ -1041,7 +1137,7 @@ def vertices_of_displacement(bsp, face_index: int) -> List[List[float]]:
         t2 = index // (power2 + 1) / power2
         bary_vert = vector.lerp(A + (AD * t1), B + (BC * t1), t2)
         # ^ interpolates across the base_quad to find the barymetric point
-        displacement_vert = [x * disp_vertex.distance for x in disp_vertex.vector]
+        displacement_vert = [n * disp_vertex.distance for n in disp_vertex.normal]
         true_vertex = [a + b for a, b in zip(bary_vert, displacement_vert)]
         texture_uv = vector.lerp(uvA + (uvAD * t1), uvB + (uvBC * t1), t2)
         lightmap_uv = vector.lerp(uv2A + (uv2AD * t1), uv2B + (uv2BC * t1), t2)

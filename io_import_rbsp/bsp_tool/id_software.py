@@ -21,19 +21,19 @@ class QuakeBsp(base.Bsp):
         try:
             if lump_name in self.branch.LUMP_CLASSES:
                 LumpClass = self.branch.LUMP_CLASSES[lump_name]
-                BspLump = lumps.BspLump(self.file, lump_header, LumpClass)
+                BspLump = lumps.BspLump.from_header(self.file, lump_header, LumpClass)
             elif lump_name in self.branch.SPECIAL_LUMP_CLASSES:
                 SpecialLumpClass = self.branch.SPECIAL_LUMP_CLASSES[lump_name]
                 self.file.seek(lump_header.offset)
-                BspLump = SpecialLumpClass(self.file.read(lump_header.length))
+                BspLump = SpecialLumpClass.from_bytes(self.file.read(lump_header.length))
             elif lump_name in self.branch.BASIC_LUMP_CLASSES:
                 LumpClass = self.branch.BASIC_LUMP_CLASSES[lump_name]
-                BspLump = lumps.BasicBspLump(self.file, lump_header, LumpClass)
+                BspLump = lumps.BasicBspLump.from_header(self.file, lump_header, LumpClass)
             else:
-                BspLump = lumps.RawBspLump(self.file, lump_header)
+                BspLump = lumps.RawBspLump.from_header(self.file, lump_header)
         except Exception as exc:
             self.loading_errors[lump_name] = exc
-            BspLump = lumps.RawBspLump(self.file, lump_header)
+            BspLump = lumps.RawBspLump.from_header(self.file, lump_header)
         setattr(self, lump_name, BspLump)
 
     def _preload(self):
@@ -100,7 +100,7 @@ class IdTechBsp(base.Bsp):
         # collect metadata
         file_magic = self.file.read(4)
         if file_magic != self.file_magic:
-            raise RuntimeError(f"{self.file} is not an IdTechBsp! file_magic is incorrect")
+            raise RuntimeError(f"{self.file} is not a {self.__class__.__name__}! file_magic is incorrect")
         self.bsp_version = int.from_bytes(self.file.read(4), "little")
         self.file.seek(0, 2)  # move cursor to end of file
         self.bsp_file_size = self.file.tell()

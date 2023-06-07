@@ -13,55 +13,15 @@ FILE_MAGIC = b"rBSP"
 
 BSP_VERSION = 47
 
-launch = "depot/r5launch/game/r2/maps"
-staging = "depot/r5staging/game/r2/maps"
-r5_100 = "depot/r5-100/game/r2/maps"
-r5_101 = "depot/r5-101/game/r2/maps"
-r5_110 = "depot/r5-110/game/r2/maps"
-r5_111 = "depot/r5-111/game/r2/maps"
-r5_131 = "depot/r5-131/game/r2/maps"
-
-GAME_PATHS = {"Apex Legends": "ApexLegends/maps",
-              "Apex Legends: Season 2 - Battle Charge": "ApexLegends/season2/maps",
-              "Apex Legends: Season 3 - Meltdown": "ApexLegends/season3/maps",
-              "Apex Legends: Season 3 - Meltdown (launch)": f"ApexLegends/season3/{launch}",
-              "Apex Legends: Season 3 - Meltdown (staging)": f"ApexLegends/season3/{staging}",
-              "Apex Legends: Season 3 - Meltdown [30 Oct Patch]": "ApexLegends/season3_30oct19/maps",
-              "Apex Legends: Season 3 - Meltdown [30 Oct Patch] (launch)": f"ApexLegends/season3/30oct19/{launch}",
-              "Apex Legends: Season 3 - Meltdown [30 Oct Patch] (staging)": f"ApexLegends/season3/30oct19/{staging}",
-              "Apex Legends: Season 3 - Meltdown [3 Dec Patch]": "ApexLegends/season3/3dec19/maps",
-              "Apex Legends: Season 3 - Meltdown [3 Dec Patch] (launch)": f"ApexLegends/season3/3dec19/{launch}",
-              "Apex Legends: Season 3 - Meltdown [3 Dec Patch] (staging)": f"ApexLegends/season3/3dec19/{staging}",
-              "Apex Legends: Season 5 - Fortune's Favor": "ApexLegends/season5/maps",
-              "Apex Legends: Season 8 - Mayhem": "ApexLegends/season8/maps",
-              "Apex Legends: Season 9 - Legacy": "ApexLegends/season9/maps",
-              "Apex Legends: Season 10 - Emergence [3 Aug Patch]": "ApexLegends/season10/3aug21/maps/",
-              "Apex Legends: Season 10 - Emergence [10 Aug Patch]": "ApexLegends/season10/10aug21/maps/",
-              "Apex Legends: Season 10 - Emergence [10 Aug Patch] (100)": f"ApexLegends/season10/10aug21/{r5_100}",
-              "Apex Legends: Season 10 - Emergence [14 Sep Patch]": "ApexLegends/season10/14sep21/maps/",
-              "Apex Legends: Season 10 - Emergence [14 Sep Patch] (100)": f"ApexLegends/season10/14sep21/{r5_100}",
-              "Apex Legends: Season 10 - Emergence [14 Sep Patch] (101)": f"ApexLegends/season10/14sep21/{r5_101}",
-              "Apex Legends: Season 10 - Emergence [24 Sep Patch]": "ApexLegends/season10/24sep21/maps/",
-              "Apex Legends: Season 10 - Emergence [24 Sep Patch] (100)": f"ApexLegends/season10/24sep21/{r5_100}",
-              "Apex Legends: Season 10 - Emergence [24 Sep Patch] (101)": f"ApexLegends/season10/24sep21/{r5_101}",
-              "Apex Legends: Season 11 - Escape": "ApexLegends/season11/maps",
-              "Apex Legends: Season 11 - Escape (110)": f"ApexLegends/season11/{r5_110}",
-              "Apex Legends: Season 11 - Escape [6 Nov Patch]": "ApexLegends/season11/6nov21/maps",
-              "Apex Legends: Season 11 - Escape [6 Nov Patch] (110)": f"ApexLegends/season11/6nov21/{r5_110}",
-              "Apex Legends: Season 11 - Escape [19 Nov Patch]": "ApexLegends/season11/19nov21/maps",
-              "Apex Legends: Season 11 - Escape [19 Nov Patch] (110)": f"ApexLegends/season11/19nov21/{r5_110}",
-              "Apex Legends: Season 11 - Escape [19 Nov Patch] (111)": f"ApexLegends/season11/19nov21/{r5_111}",
-              "Apex Legends: Season 13 - Saviors": "ApexLegends/season13/10mar22/maps",
-              "Apex Legends: Season 13 - Saviors [Awaken] (131)": f"ApexLegends/season13/21jun22/{r5_131}"}
+GAME_PATHS = {"Apex Legends": "ApexLegends/maps"}
 
 GAME_VERSIONS = {"Apex Legends": 47,
                  "Apex Legends: Season 7 - Ascension": 48,  # Olympus
                  "Apex Legends: Season 8 - Mayhem": 49,  # King's Canyon map update 3
                  "Apex Legends: Season 10 - Emergence": 50,  # Arenas: Encore / SkyGarden
-                 "Apex Legends: Season 11 - Escape [19 Nov Patch] (110)": 49,
+                 "Apex Legends: Season 11 - Escape [19 Nov Patch] (110)": 49,  # depots/
                  "Apex Legends: Season 11 - Escape [19 Nov Patch] (111)": (49, 1),
-                 "Apex Legends: Season 11 - Escape [19 Nov Patch]": (50, 1),
-                 "Apex Legends: Season 13 - Saviors": (51, 1)}
+                 "Apex Legends: Season 11 - Escape [19 Nov Patch]": (50, 1)}  # maps/
 
 
 class LUMP(enum.Enum):
@@ -109,11 +69,11 @@ class LUMP(enum.Enum):
     UNUSED_41 = 0x0029
     CUBEMAPS = 0x002A
     UNKNOWN_43 = 0x002B
-    UNUSED_44 = 0x002C
-    UNUSED_45 = 0x002D
-    UNUSED_46 = 0x002E
-    UNUSED_47 = 0x002F
-    UNUSED_48 = 0x0030
+    UNKNOWN_44 = 0x002C  # Storm Point & Habitat
+    UNKNOWN_45 = 0x002D  # Storm Point & Habitat
+    UNKNOWN_46 = 0x002E  # Storm Point & Habitat
+    UNKNOWN_47 = 0x002F  # Storm Point & Habitat
+    UNKNOWN_48 = 0x0030  # Storm Point & Habitat; sometimes unused
     UNUSED_49 = 0x0031
     UNUSED_50 = 0x0032
     UNUSED_51 = 0x0033
@@ -147,7 +107,7 @@ class LUMP(enum.Enum):
     MESH_INDICES = 0x004F
     MESHES = 0x0050
     MESH_BOUNDS = 0x0051
-    MATERIAL_SORT = 0x0052
+    MATERIAL_SORTS = 0x0052
     LIGHTMAP_HEADERS = 0x0053
     UNUSED_84 = 0x0054
     TWEAK_LIGHTS = 0x0055
@@ -200,6 +160,9 @@ LumpHeader = source.LumpHeader
 
 # Known lump changes from Titanfall 2 -> Apex Legends:
 # New:
+#   CM_GRID -> TWEAK_LIGHTS
+#   TEXTURE_DATA_STRING_DATA -> UNKNOWN_43
+#   TRICOLL_BEVEL_INDICES -> UNKNOWN_97
 #   UNUSED_15 -> SURFACE_NAMES
 #   UNUSED_16 -> CONTENTS_MASKS
 #   UNUSED_17 -> SURFACE_PROPERTIES
@@ -209,35 +172,34 @@ LumpHeader = source.LumpHeader
 #   UNUSED_37 -> UNKNOWN_37
 #   UNUSED_38 -> UNKNOWN_38
 #   UNUSED_39 -> UNKNOWN_39
-#   CM_GRID -> TWEAK_LIGHTS
-#   TEXTURE_DATA_STRING_DATA -> UNKNOWN_43
-#   TRICOLL_BEVEL_INDICES -> UNKNOWN_97
 # Deprecated:
-#   LIGHTPROBE_BSP_NODES
-#   LIGHTPROBE_BSP_REF_IDS
-#   PHYSICS_COLLIDE
-#   LEAF_WATER_DATA
-#   TEXTURE_DATA_STRING_TABLE
-#   PHYSICS_LEVEL
-#   TRICOLL_TRIS
-#   TRICOLL_NODES
-#   TRICOLL_HEADERS
-#   CM_GRID_CELLS
-#   CM_GEO_SETS
-#   CM_GEO_SET_BOUNDS
-#   CM_PRIMITIVES
-#   CM_PRIMITIVE_BOUNDS
-#   CM_UNIQUE_CONTENTS
 #   CM_BRUSHES
 #   CM_BRUSH_SIDE_PLANE_OFFSETS
 #   CM_BRUSH_SIDE_PROPERTIES
 #   CM_BRUSH_SIDE_TEXTURE_VECTORS
+#   CM_GEO_SETS
+#   CM_GEO_SET_BOUNDS
+#   CM_GRID_CELLS
+#   CM_PRIMITIVES
+#   CM_PRIMITIVE_BOUNDS
+#   CM_UNIQUE_CONTENTS
+#   LEAF_WATER_DATA
+#   LIGHTPROBE_BSP_NODES
+#   LIGHTPROBE_BSP_REF_IDS
+#   PHYSICS_COLLIDE
+#   PHYSICS_LEVEL
+#   TEXTURE_DATA_STRING_TABLE
 #   TRICOLL_BEVEL_STARTS
+#   TRICOLL_HEADERS
+#   TRICOLL_NODES
+#   TRICOLL_TRIANGLES
 
 # a rough map of the relationships between lumps:
-# Model -> Mesh -> MaterialSort -> TextureData -> SurfaceName
-#                             \--> VertexReservedX
-#                              \-> MeshIndex?
+
+#                /-> BVHNode
+# Entity -> Model -> Mesh -> MaterialSort -> TextureData -> SurfaceName
+#                \-> BVHLeaf            \--> VertexReservedX
+#                                        \-> MeshIndex?
 # MeshBounds & Mesh are parallel
 # NOTE: parallel means each entry is paired with an entry of the same index in the parallel lump
 # -- this means you can collect only the data you need, but increases the chance of storing redundant data
@@ -271,7 +233,89 @@ LumpHeader = source.LumpHeader
 # PACKED_VERTICES is parallel with VERTICES?
 
 
+# flag enums
+class BVHNodeType(enum.Enum):  # used by BVHNode
+    """BVH4 (GDC 2018 - Extreme SIMD: Optimized Collision Detection in Titanfall)
+https://www.youtube.com/watch?v=6BIfqfC1i7U
+https://gdcvault.com/play/1025126/Extreme-SIMD-Optimized-Collision-Detection"""
+    BVH_NODE = 0x00
+    NO_CHILD = 0x01
+    # primitive types:
+    UNKNOWN_2 = 0x02  # edge?
+    UNKNOWN_3 = 0x03
+    UNKNOWN_4 = 0x04
+    UNKNOWN_5 = 0x05
+    UNKNOWN_6 = 0x06
+    UNKNOWN_7 = 0x07
+    UNKNOWN_8 = 0x08
+    UNKNOWN_9 = 0x09
+    UNKNOWN_10 = 0x0A
+    UNKNOWN_11 = 0x0B
+    UNKNOWN_12 = 0x0C
+    UNKNOWN_13 = 0x0D
+    UNKNOWN_14 = 0x0E
+    UNKNOWN_15 = 0x0F
+
+
 # classes for lumps, in alphabetical order:
+class BVHNode(base.Struct):  # LUMP 18 (0012)
+    """BVH4 (GDC 2018 - Extreme SIMD: Optimized Collision Detection in Titanfall)
+https://www.youtube.com/watch?v=6BIfqfC1i7U
+https://gdcvault.com/play/1025126/Extreme-SIMD-Optimized-Collision-Detection"""
+    # Identified by Fifty & Rexx, matched to GDC talk spec
+    # |     child0    |     child1    |     child2    |     child3    |
+    # | min x | max x | min x | max x | min x | max x | min x | max x |
+    # | min y | max y | min y | max y | min y | max y | min y | max y |
+    # | min z | max z | min z | max z | min z | max z | min z | max z |
+    # |   INDEX  | 01 |   INDEX  | 23 |   INDEX  | CM |   INDEX  |    |
+    # arranged for easy SIMD operations
+    x: List[List[int]]  # x.child0.min .. x.child3.max
+    y: List[List[int]]  # y.child0.min .. y.child3.max
+    z: List[List[int]]  # z.child0.min .. z.child3.max
+    index: List[List[int]]  # child indices and metadata
+    # NOTE: bitfields are definitely all wrong, not all padding is 0
+    # NOTE: index.child2.collision_mask should be an index (SurfaceProperties?)
+    __slots__ = [*"xyz", "index"]
+    _format = "24h4I"
+    _arrays = {axis: {f"child{i}": ["min", "max"] for i in range(4)} for axis in [*"xyz"]}
+    _arrays.update({"index": [f"child{i}" for i in range(4)]})
+    _bitfields = {"index.child0": {"child0_type": 4, "child1_type": 4, "index": 24},
+                  "index.child1": {"child2_type": 4, "child3_type": 4, "index": 24},
+                  "index.child2": {"collision_mask": 8, "index": 24},
+                  "index.child3": {"padding": 8, "index": 24}}
+    _classes = {"index.child0.child0_type": BVHNodeType, "index.child0.child1_type": BVHNodeType,
+                "index.child1.child2_type": BVHNodeType, "index.child1.child3_type": BVHNodeType}
+
+    # TODO: remap w/ properties and use a bounding box class
+    # node.children[0].mins.x
+    # node.children[1].index  # TODO: might need to allow signed bitfield members
+    # node.collision_mask
+
+    def __repr__(self) -> str:
+        out = list()
+
+        def minmax(node: BVHNode, axis: str, child: str) -> str:
+            a = getattr(getattr(node, axis), child)
+            return f"min.{axis} = {str(a.min):<6} | max.{axis} = {str(a.max):<6}"
+
+        out.append("| ------------ child0 ----------- | ------------ child1 ----------- |")
+        out.append(f"| {minmax(self, 'x', 'child0')} | {minmax(self, 'x', 'child1')} |")
+        out.append(f"| {minmax(self, 'y', 'child0')} | {minmax(self, 'y', 'child1')} |")
+        out.append(f"| {minmax(self, 'z', 'child0')} | {minmax(self, 'z', 'child1')} |")
+        out.append(f"| index = {str(self.index.child0.index):<23} | index = {str(self.index.child1.index):<23} |")
+        out.append(f"| type = {str(self.index.child0.child0_type):<24} | type = {str(self.index.child0.child1_type):<24} |")
+        out.append("| ------------ child2 ----------- | ------------ child3 ----------- |")
+        out.append(f"| {minmax(self, 'x', 'child2')} | {minmax(self, 'x', 'child3')} |")
+        out.append(f"| {minmax(self, 'y', 'child2')} | {minmax(self, 'y', 'child3')} |")
+        out.append(f"| {minmax(self, 'z', 'child2')} | {minmax(self, 'z', 'child3')} |")
+        out.append(f"| index = {str(self.index.child2.index):<23} | index = {str(self.index.child3.index):<23} |")
+        out.append(f"| type = {str(self.index.child1.child2_type):<24} | type = {str(self.index.child1.child3_type):<24} |")
+        out.append(f"| collision_mask = {str(self.index.child2.collision_mask):<48} |")
+        out.append(f"| padding = {str(self.index.child2.collision_mask):<55} |")
+        # NOTE: padding is not displayed with this method
+        return "\n".join(out)
+
+
 class CellAABBNode(base.Struct):  # LUMP 119 (0077)
     """Identified by Fifty#8113"""
     # NOTE: the struct length & positions of mins & maxs take advantage of SIMD 128-bit registers
@@ -323,6 +367,7 @@ class Mesh(base.Struct):  # LUMP 80 (0050)
     __slots__ = ["first_mesh_index", "num_triangles", "unknown", "material_sort", "flags"]
     _format = "IH8hHI"  # 28 bytes
     _arrays = {"unknown": 8}
+    _classes = {"flags": titanfall.MeshFlags}
 
 
 class Model(base.Struct):  # LUMP 14 (000E)
@@ -330,10 +375,16 @@ class Model(base.Struct):  # LUMP 14 (000E)
     maxs: List[float]  # AABB maxs
     first_mesh: int
     num_meshes: int
-    unknown: List[int]  # \_(;/)_/
-    __slots__ = ["mins", "maxs", "first_mesh", "num_meshes", "unknown"]
-    _format = "6f2I8i"
-    _arrays = {"mins": [*"xyz"], "maxs": [*"xyz"], "unknown": 8}
+    bvh_node: int
+    bvh_leaf: int
+    first_vertex: int
+    vertex_flags: int  # use PACKED_VERTICES or other?
+    unknown_1: List[float]
+    unknown_2: int
+    __slots__ = ["mins", "maxs", "first_mesh", "num_meshes", "bvh_node", "bvh_leaf",
+                 "first_vertex", "vertex_flags", "unknown_1", "unknown_2"]
+    _format = "6f2I4i3fi"
+    _arrays = {"mins": [*"xyz"], "maxs": [*"xyz"], "unknown_1": 3}
 
 
 class PackedVertex(base.MappedArray):  # LUMP 20  (0014)
@@ -345,13 +396,22 @@ class PackedVertex(base.MappedArray):  # LUMP 20  (0014)
     _format = "3h"
 
 
-class ShadowMesh(base.Struct):  # LUMP 7F (0127)
+class ShadowMesh(base.Struct):  # LUMP 127 (007F)
     start_index: int  # assumed
     num_triangles: int  # assumed
     unknown: List[int]  # usually (1, -1)
     __slots__ = ["start_index", "num_triangles", "unknown"]
     _format = "2I2h"  # assuming 12 bytes
     _arrays = {"unknown": 2}
+
+
+class SurfaceProperty(base.MappedArray):  # LUMP 17 (0011)
+    unknown_1: int
+    unknown_2: int
+    contents_mask: int  # index of ContentsMask for this SurfaceProperty
+    surface_name: int  # index of SurfaceName for this SurfaceProperty
+    _mapping = ["unknown_1", "unknown_2", "content_mask", "surface_name"]
+    _format = "h2bi"
 
 
 class TextureData(base.Struct):  # LUMP 2 (0002)
@@ -376,7 +436,7 @@ class VertexLitBump(base.Struct):  # LUMP 73 (0049)
     position_index: int  # index into Vertex lump
     normal_index: int  # index into VertexNormal lump
     uv0: List[float]  # texture coordindates
-    negative_one: int  # -1
+    negative_one: int  # always -1
     uv1: List[float]  # lightmap coords
     colour: List[int]
     __slots__ = ["position_index", "normal_index", "uv0", "negative_one", "uv1", "colour"]
@@ -414,23 +474,36 @@ class VertexUnlitTS(base.Struct):  # LUMP 74 (004A)
 
 
 # special lump classes, in alphabetical order:
-def ApexSPRP(raw_lump):
-    return titanfall2.GameLump_SPRP(raw_lump, titanfall2.StaticPropv13)
+# TODO: BVHLeafData
 
 
 # NOTE: all Apex lumps are version 0, except GAME_LUMP
 # {"LUMP_NAME": {version: LumpClass}}
 BASIC_LUMP_CLASSES = titanfall2.BASIC_LUMP_CLASSES.copy()
+pops = ("CM_BRUSH_SIDE_PLANE_OFFSETS", "CM_BRUSH_SIDE_PROPERTIES", "CM_PRIMITIVES", "CM_UNIQUE_CONTENTS",
+        "TEXTURE_DATA_STRING_TABLE", "TRICOLL_BEVEL_STARTS", "TRICOLL_BEVEL_INDICES", "TRICOLL_TRIANGLES")
+for LUMP_NAME in pops:
+    BASIC_LUMP_CLASSES.pop(LUMP_NAME)
+del LUMP_NAME, pops
+BASIC_LUMP_CLASSES.update({"CONTENTS_MASKS": {0: shared.UnsignedInts}})
 
 LUMP_CLASSES = titanfall2.LUMP_CLASSES.copy()
-LUMP_CLASSES.update({"CELL_AABB_NODES":    {0: CellAABBNode},
+pops = ("CM_BRUSHES", "CM_BRUSH_SIDE_TEXTURE_VECTORS", "CM_GEO_SETS", "CM_GEO_SET_BOUNDS",
+        "CM_GRID_CELLS", "CM_PRIMITIVE_BOUNDS", "LEAF_WATER_DATA",
+        "LIGHTMAP_DATA_REAL_TIME_LIGHTS_PAGE", "TRICOLL_HEADERS", "TRICOLL_NODES")
+for LUMP_NAME in pops:
+    LUMP_CLASSES.pop(LUMP_NAME)
+del LUMP_NAME, pops
+LUMP_CLASSES.update({"BVH_NODES":          {0: BVHNode},
+                     "CELL_AABB_NODES":    {0: CellAABBNode},
                      "LIGHTMAP_HEADERS":   {0: titanfall.LightmapHeader},
-                     "MATERIAL_SORT":      {0: MaterialSort},
+                     "MATERIAL_SORTS":     {0: MaterialSort},
                      "MESHES":             {0: Mesh},
                      "MODELS":             {0: Model},
                      "PACKED_VERTICES":    {0: PackedVertex},
                      "PLANES":             {0: titanfall.Plane},
                      "SHADOW_MESHES":      {0: ShadowMesh},
+                     "SURFACE_PROPERTIES": {0: SurfaceProperty},
                      "TEXTURE_DATA":       {0: TextureData},
                      "VERTEX_BLINN_PHONG": {0: VertexBlinnPhong},
                      "VERTEX_LIT_BUMP":    {0: VertexLitBump},
@@ -440,14 +513,15 @@ LUMP_CLASSES.update({"CELL_AABB_NODES":    {0: CellAABBNode},
 
 SPECIAL_LUMP_CLASSES = titanfall2.SPECIAL_LUMP_CLASSES.copy()
 SPECIAL_LUMP_CLASSES.pop("CM_GRID")
+SPECIAL_LUMP_CLASSES.pop("PHYSICS_COLLIDE")
 SPECIAL_LUMP_CLASSES.pop("TEXTURE_DATA_STRING_DATA")
-SPECIAL_LUMP_CLASSES.update({"LEVEL_INFO":    {0: LevelInfo.from_bytes},
+SPECIAL_LUMP_CLASSES.update({"LEVEL_INFO":    {0: LevelInfo},
                              "SURFACE_NAMES": {0: shared.TextureDataStringData}})
 
 
 GAME_LUMP_HEADER = source.GameLumpHeader
 
-GAME_LUMP_CLASSES = {"sprp": {bsp_version: ApexSPRP for bsp_version in (47, 48, 49, 50, 51)}}
+GAME_LUMP_CLASSES = {"sprp": {bsp_version: titanfall2.GameLump_SPRPv13 for bsp_version in (47, 48, 49, 50)}}
 
 
 # branch exclusive methods, in alphabetical order:
@@ -459,7 +533,7 @@ def get_TextureData_SurfaceName(bsp, texture_data_index: int) -> str:
 def get_Mesh_SurfaceName(bsp, mesh_index: int) -> str:
     """Returns the name of the .vmt applied to bsp.MESHES[mesh_index]"""
     mesh = bsp.MESHES[mesh_index]
-    material_sort = bsp.MATERIAL_SORT[mesh.material_sort]
+    material_sort = bsp.MATERIAL_SORTS[mesh.material_sort]
     return bsp.get_TextureData_SurfaceName(material_sort.texture_data)
 
 
@@ -481,7 +555,7 @@ def debug_Mesh_stats(bsp):
         print(f"# MODELS[{i}]")
         for j in range(model.first_mesh, model.first_mesh + model.num_meshes):
             mesh = bsp.MESHES[j]
-            material_sort = bsp.MATERIAL_SORT[mesh.material_sort]
+            material_sort = bsp.MATERIAL_SORTS[mesh.material_sort]
             texture_name = bsp.get_TextureData_SurfaceName(material_sort.texture_data)
             vertex_lump = (titanfall.MeshFlags(mesh.flags) & titanfall.MeshFlags.MASK_VERTEX).name
             indices = set(bsp.MESH_INDICES[mesh.first_mesh_index:mesh.first_mesh_index + mesh.num_triangles * 3])

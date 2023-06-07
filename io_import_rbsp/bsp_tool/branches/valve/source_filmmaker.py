@@ -6,9 +6,9 @@ from ..valve import source
 
 FILE_MAGIC = b"VBSP"
 
-BSP_VERSION = 22
+BSP_VERSION = 21
 
-GAME_PATHS = {"INFRA": "infra/infra"}
+GAME_PATHS = {"Source Filmmaker": "SourceFilmmaker/game/tf"}
 
 GAME_VERSIONS = {GAME_NAME: BSP_VERSION for GAME_NAME in GAME_PATHS}
 
@@ -21,11 +21,11 @@ class LUMP(enum.Enum):
     VISIBILITY = 4
     NODES = 5
     TEXTURE_INFO = 6
-    FACES = 7
-    LIGHTING = 8
-    OCCLUSION = 9
-    LEAVES = 10
-    FACE_IDS = 11
+    FACES = 7  # version 1
+    LIGHTING = 8  # version 1
+    OCCLUSION = 9  # version 2
+    LEAVES = 10  # version 1
+    FACE_IDS = 11  # TF2 branch, for mapping debug & detail prop seed
     EDGES = 12
     SURFEDGES = 13
     MODELS = 14
@@ -36,8 +36,8 @@ class LUMP(enum.Enum):
     BRUSH_SIDES = 19
     AREAS = 20
     AREA_PORTALS = 21
-    FACE_BRUSHES = 22  # infra
-    FACE_BRUSH_LIST = 23  # infra
+    UNUSED_22 = 22
+    UNUSED_23 = 23
     UNUSED_24 = 24
     UNUSED_25 = 25
     DISPLACEMENT_INFO = 26
@@ -63,43 +63,50 @@ class LUMP(enum.Enum):
     LEAF_MIN_DIST_TO_WATER = 46
     FACE_MACRO_TEXTURE_INFO = 47
     DISPLACEMENT_TRIS = 48
-    PROP_BLOB = 49  # left4dead
+    PHYSICS_COLLIDE_SURFACE = 49  # deprecated / X360 ?
     WATER_OVERLAYS = 50  # deprecated / X360 ?
     LEAF_AMBIENT_INDEX_HDR = 51
     LEAF_AMBIENT_INDEX = 52
-    LIGHTING_HDR = 53
+    LIGHTING_HDR = 53  # version 1
     WORLD_LIGHTS_HDR = 54
-    LEAF_AMBIENT_LIGHTING_HDR = 55
-    LEAF_AMBIENT_LIGHTING = 56
+    LEAF_AMBIENT_LIGHTING_HDR = 55  # version 1
+    LEAF_AMBIENT_LIGHTING = 56  # version 1
     XZIP_PAKFILE = 57  # deprecated / X360 ?
-    FACES_HDR = 58
+    FACES_HDR = 58  # version 1
     MAP_FLAGS = 59
     OVERLAY_FADES = 60
-    OVERLAY_SYSTEM_LEVELS = 61  # left4dead
-    PHYSICS_LEVEL = 62  # left4dead2
-    DISPLACEMENT_MULTIBLEND = 63  # alienswarm
+    UNUSED_61 = 61
+    PHYSICS_LEVEL = 62  # used by orange_box_x360 for L4D2 maps
+    UNUSED_63 = 63
 
 
 LumpHeader = source.LumpHeader
 
+# a rough map of the relationships between lumps:
 
-# known lump changes from SDK 2013 -> Infra:
-# new:
-#   FACE_BRUSHES
-#   FACE_BRUSHES_LIST
+#                     /-> SurfEdge -> Edge -> Vertex
+# Leaf -> Node -> Face -> Plane
+#                     \-> DisplacementInfo -> DisplacementVertex
+
+# ClipPortalVertices are AreaPortal geometry [citation neeeded]
+
+
+# classes for special lumps, in alphabetical order:
+# TODO: GameLump_SPRPv10
 
 
 # {"LUMP_NAME": {version: LumpClass}}
 BASIC_LUMP_CLASSES = sdk_2013.BASIC_LUMP_CLASSES.copy()
 
 LUMP_CLASSES = sdk_2013.LUMP_CLASSES.copy()
-LUMP_CLASSES.pop("PRIMITIVES")
 
 SPECIAL_LUMP_CLASSES = sdk_2013.SPECIAL_LUMP_CLASSES.copy()
 
 GAME_LUMP_HEADER = sdk_2013.GAME_LUMP_HEADER
 
+# {"lump": {version: SpecialLumpClass}}
 GAME_LUMP_CLASSES = {"sprp": sdk_2013.GAME_LUMP_CLASSES["sprp"].copy()}
+GAME_LUMP_CLASSES["sprp"].pop(10)
 
 
 methods = [*sdk_2013.methods]

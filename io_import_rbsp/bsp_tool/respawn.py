@@ -31,12 +31,14 @@ class ExternalLumpManager:
     # ^ {"LUMP_NAME": Error}
 
     def __init__(self, bsp: RespawnBsp):
-        self.endianness = bsp.endianness
-        self.filename = bsp.filename
-        self.folder = bsp.folder
         self.branch = bsp.branch
         self.bsp_version = bsp.bsp_version
+        self.endianness = bsp.endianness
         self.file_magic = bsp.file_magic
+        self.filename = bsp.filename
+        self.folder = bsp.folder
+        self.lump_count = bsp.lump_count
+        self.revision = bsp.revision
         # generate headers
         self.headers = dict()
         self.loading_errors = dict()
@@ -83,21 +85,21 @@ class ExternalLumpManager:
                                                  GameLumpClasses, self.branch.GAME_LUMP_HEADER)
             elif lump_name in self.branch.LUMP_CLASSES:
                 LumpClass = self.branch.LUMP_CLASSES[lump_name][lump_header.version]
-                ExternalBspLump = lumps.ExternalBspLump(lump_header, LumpClass)
+                ExternalBspLump = lumps.ExternalBspLump.from_header(lump_header, LumpClass)
             elif lump_name in self.branch.BASIC_LUMP_CLASSES:
                 LumpClass = self.branch.BASIC_LUMP_CLASSES[lump_name][lump_header.version]
-                ExternalBspLump = lumps.ExternalBasicBspLump(lump_header, LumpClass)
+                ExternalBspLump = lumps.ExternalBasicBspLump.from_header(lump_header, LumpClass)
             elif lump_name in self.branch.SPECIAL_LUMP_CLASSES:
                 SpecialLumpClass = self.branch.SPECIAL_LUMP_CLASSES[lump_name][lump_header.version]
                 with open(lump_header.filename, "rb") as bsp_lump_file:
-                    ExternalBspLump = SpecialLumpClass(bsp_lump_file.read())
+                    ExternalBspLump = SpecialLumpClass.from_bytes(bsp_lump_file.read())
             else:
-                ExternalBspLump = lumps.ExternalRawBspLump(lump_header)
+                ExternalBspLump = lumps.ExternalRawBspLump.from_header(lump_header)
         except KeyError:  # lump version not supported
-            ExternalBspLump = lumps.ExternalRawBspLump(lump_header)
+            ExternalBspLump = lumps.ExternalRawBspLump.from_header(lump_header)
         except Exception as exc:
             self.loading_errors[lump_name] = exc
-            ExternalBspLump = lumps.ExternalRawBspLump(lump_header)
+            ExternalBspLump = lumps.from_header.ExternalRawBspLump(lump_header)
         setattr(self, lump_name, ExternalBspLump)
         return getattr(self, lump_name)  # uses __getattribute__
 
@@ -126,8 +128,10 @@ class ExternalLumpManager:
             if lump_version not in all_lump_classes[lump_name]:
                 return bytes(lump_entries)
         if lump_name in self.branch.BASIC_LUMP_CLASSES:
-            _format = self.branch.BASIC_LUMP_CLASSES[lump_name][lump_version]._format
-            raw_lump = struct.pack(f"{len(lump_entries)}{_format}", *lump_entries)
+            BasicLumpClass = self.branch.BASIC_LUMP_CLASSES[lump_name][lump_version]
+            if hasattr(BasicLumpClass, "as_int"):  # branches.base.BitField
+                lump_entries = [x.as_int() for x in lump_entries]
+            raw_lump = struct.pack(f"{len(lump_entries)}{BasicLumpClass._format}", *lump_entries)
         elif lump_name in self.branch.LUMP_CLASSES:
             _format = self.branch.LUMP_CLASSES[lump_name][lump_version]._format
             raw_lump = b"".join([struct.pack(_format, *x.as_tuple()) for x in lump_entries])
@@ -188,35 +192,10 @@ class RespawnBsp(valve.ValveBsp):
         # collect lumps
         self.headers = dict()
         self.loading_errors: Dict[str, Exception] = dict()
-        for LUMP in self.branch.LUMP:
-            self.file.seek(16 + struct.calcsize(self.branch.LumpHeader._format) * LUMP.value)
-            lump_header = self.branch.LumpHeader.from_stream(self.file)
-            self.headers[LUMP.name] = lump_header
-            if lump_header.length == 0 or lump_header.offset >= self.bsp_file_size:
-                continue  # skip empty lumps
-            try:
-                if LUMP.name == "GAME_LUMP":  # NOTE: lump_header.version is ignored in this case
-                    GameLumpClasses = getattr(self.branch, "GAME_LUMP_CLASSES", dict())
-                    BspLump = lumps.GameLump(self.file, lump_header, self.endianness,
-                                             GameLumpClasses, self.branch.GAME_LUMP_HEADER)
-                elif LUMP.name in self.branch.LUMP_CLASSES:
-                    LumpClass = self.branch.LUMP_CLASSES[LUMP.name][lump_header.version]
-                    BspLump = lumps.BspLump(self.file, lump_header, LumpClass)
-                elif LUMP.name in self.branch.BASIC_LUMP_CLASSES:
-                    LumpClass = self.branch.BASIC_LUMP_CLASSES[LUMP.name][lump_header.version]
-                    BspLump = lumps.BasicBspLump(self.file, lump_header, LumpClass)
-                elif LUMP.name in self.branch.SPECIAL_LUMP_CLASSES:
-                    SpecialLumpClass = self.branch.SPECIAL_LUMP_CLASSES[LUMP.name][lump_header.version]
-                    self.file.seek(lump_header.offset)
-                    BspLump = SpecialLumpClass(self.file.read(lump_header.length))
-                else:
-                    BspLump = lumps.RawBspLump(self.file, lump_header)
-            except KeyError:  # lump version not supported
-                BspLump = lumps.RawBspLump(self.file, lump_header)
-            except Exception as exc:
-                self.loading_errors[LUMP.name] = exc
-                BspLump = lumps.RawBspLump(self.file, lump_header)
-            setattr(self, LUMP.name, BspLump)
+        for lump_name, lump_header in self._header_generator(offset=16):
+            if lump_header.offset >= self.bsp_file_size:
+                continue  # or version has flag (e.g. (50, 1))
+            self._preload_lump(lump_name, lump_header)
 
         self.external = ExternalLumpManager(self)
 
@@ -231,7 +210,7 @@ class RespawnBsp(valve.ValveBsp):
                     self.entity_headers[LUMP_name] = ent_file.readline().decode().rstrip("\n")
                     # Titanfall:  ENTITIES01
                     # Apex Legends:  ENTITIES02 num_models=0
-                    setattr(self, LUMP_name, shared.Entities(ent_file.read()))
+                    setattr(self, LUMP_name, shared.Entities.from_bytes(ent_file.read()))
                     # each .ent file also has a null byte at the very end
 
     def save_as(self, filename: str):

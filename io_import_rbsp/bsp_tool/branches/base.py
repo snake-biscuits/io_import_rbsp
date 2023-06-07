@@ -1,6 +1,7 @@
 """Base classes for defining .bsp lump structs"""
 from __future__ import annotations
 import collections
+import enum
 import itertools
 import io
 import re
@@ -148,21 +149,6 @@ class Struct:
         # TODO: enforce MappedArray spec
         super().__setattr__(attr, value)
 
-    def as_tuple(self) -> list:
-        """recreates the _tuple this instance was initialised from"""
-        _tuple = list()
-        for slot in self.__slots__:
-            value = getattr(self, slot)
-            if isinstance(value, MappedArray):
-                _tuple.extend(value.as_tuple())  # unpack the stack
-            elif isinstance(value, Iterable):  # includes _classes
-                _tuple.extend(value)
-            elif isinstance(value, BitField):
-                _tuple.append(value.as_int())
-            else:
-                _tuple.append(value)
-        return [int(x) if f in "bBhHiI" else x for x, f in zip(_tuple, split_format(self._format))]
-
     @classmethod
     def _defaults(cls) -> Dict[str, Any]:
         types = split_format(cls._format)
@@ -215,6 +201,21 @@ class Struct:
 
     def as_bytes(self) -> bytes:
         return struct.pack(self._format, *self.as_tuple())
+
+    def as_tuple(self) -> list:
+        """recreates the _tuple this instance was initialised from"""
+        _tuple = list()
+        for slot in self.__slots__:
+            value = getattr(self, slot)
+            if isinstance(value, MappedArray):
+                _tuple.extend(value.as_tuple())  # unpack the stack
+            elif isinstance(value, BitField):  # BitField is Iterable!
+                _tuple.append(value.as_int())
+            elif isinstance(value, Iterable):  # includes _classes
+                _tuple.extend(value)
+            else:
+                _tuple.append(value)
+        return [int(x) if f in "bBhHiI" else x for x, f in zip(_tuple, split_format(self._format))]
 
     @classmethod
     def as_cpp(cls, one_liner_limit: int = 80) -> str:
@@ -323,21 +324,6 @@ class MappedArray:
         # TODO: enforce child MappedArray spec
         super().__setattr__(attr, value)
 
-    def as_tuple(self) -> list:
-        """recreates the array this instance was generated from"""
-        _tuple = list()
-        for attr in self._mapping:
-            value = getattr(self, attr)
-            if isinstance(value, MappedArray):
-                _tuple.extend(value.as_tuple())  # recursive call
-            elif isinstance(value, Iterable):  # includes _classes
-                _tuple.extend(value)
-            elif isinstance(value, BitField):
-                _tuple.append(value.as_int())
-            else:
-                _tuple.append(value)
-        return [int(x) if f in "bBhHiI" else x for x, f in zip(_tuple, split_format(self._format))]
-
     @classmethod
     def _defaults(cls, _mapping: AttrMap = None, _format: str = None) -> Dict[str, Any]:
         _format = cls._format if _format is None else _format
@@ -429,7 +415,7 @@ class MappedArray:
             else:  # sub-struct
                 if isinstance(value, MappedArray):
                     attrs.extend(value.as_cpp(inline_as=attr, one_liner_limit=one_liner_limit - 4).split("\n"))
-                elif isinstance(value, BitField):
+                elif isinstance(value, BitField):  # gets skipped sometimes?
                     attrs.append(value.as_cpp(inline_as=attr))
                 elif attr in self._classes:  # enum.IntFlags shouldn't end up here
                     kwargs = dict(_mapping=self._mapping[attr], _format="".join(attr_format))
@@ -466,17 +452,39 @@ class MappedArray:
             else:
                 return "\n".join(["struct {", inner, "} " + f"{inline_as};"])
 
+    def as_tuple(self) -> list:
+        """recreates the array this instance was generated from"""
+        _tuple = list()
+        for attr in self._mapping:
+            value = getattr(self, attr)
+            if isinstance(value, MappedArray):
+                _tuple.extend(value.as_tuple())  # recursive call
+            elif isinstance(value, BitField):  # BitField is Iterable!
+                _tuple.append(value.as_int())
+            elif isinstance(value, Iterable):  # includes _classes
+                _tuple.extend(value)
+            else:
+                _tuple.append(value)
+        return [int(x) if f in "bBhHiI" else x for x, f in zip(_tuple, split_format(self._format))]
+
 
 class BitField:
     """Maps sub-integer data"""
+    # WARNING: field order & bit order may not match!
+    # BitField(0xAA, 0XBBBB, 0xCC, _format="I", _fields={"a": 8, "b": 16, "c": 8}).as_int() == 0xCCBBBBAA
     _fields: BitFieldMapping = dict()  # must cover entire int type
     # NOTE: _fields will become an OrderedDict when intialised, making it easier to tweak
     # -- if re-ordering attrs, replace _fields with a new OrderedDict
+    # TODO: automatically add padding field w/ a UserWarning
+    # -- throw an error if padding is already used
     _format: str = ""  # 1x uint8/16/32_t
+    # TODO: endianness, wider BitFields (e.g. 2x)
     _classes: ClassesDict = dict()  # good for enum.IntFlags subclasses; bool also accepted
 
     def __init__(self, *args, _fields: BitFieldMapping = None, _format: str = None, _classes: ClassesDict = None, **kwargs):
         """generate a unique class at runtime, just like MappedArray"""
+        if len(args) == 1 and len(kwargs) == 0:  # BasicLumpClass
+            args = tuple(self.__class__.from_int(args[0], _fields, _format, _classes))
         self._format = self._format if _format is None else _format
         self._fields = collections.OrderedDict(self._fields if _fields is None else _fields)
         self._classes = self._classes if _classes is None else _classes
@@ -495,9 +503,11 @@ class BitField:
         values.update(kwargs)
         invalid_kwargs = set(kwargs).difference(set(self._fields))
         assert len(invalid_kwargs) == 0, f"Invalid kwargs: {invalid_kwargs}"
-        # TODO: check for invalid kwargs
-        for attr, size in _fields.items():
+        for attr, size in self._fields.items():
             setattr(self, attr, values[attr])
+
+    def __iter__(self) -> Iterable:
+        return iter([getattr(self, attr) for attr in self._fields])
 
     def __repr__(self) -> str:
         attrs = [f"{a}: {getattr(self, a)!r}" for a in self._fields.keys()]
@@ -532,9 +542,16 @@ class BitField:
         out = 0
         offset = 0
         for attr, size in self._fields.items():
-            out += getattr(self, attr) << offset  # __setattr__ prevents overflow
+            value = getattr(self, attr)
+            if isinstance(value, enum.Enum):
+                value = int(value.value)
+            out += value << offset  # __setattr__ prevents overflow
             offset += size
         return out
+
+    def as_bytes(self) -> bytes:
+        # TODO: endianness
+        return self.as_int().to_bytes(struct.calcsize(self._format), "little")
 
     # NOTE: cannot be a classmethod due to runtime type definition
     def as_cpp(self, _fields: BitFieldMapping = None, _format: str = None, inline_as: str = None) -> str:

@@ -26,15 +26,15 @@ LumpHeader = source.LumpHeader
 BASIC_LUMP_CLASSES = orange_box.BASIC_LUMP_CLASSES.copy()
 
 LUMP_CLASSES = orange_box.LUMP_CLASSES.copy()
-LUMP_CLASSES.pop("WORLD_LIGHTS")  # sdk_2013?
-LUMP_CLASSES.pop("WORLD_LIGHTS_HDR")
+LUMP_CLASSES.pop("WORLD_LIGHTS")  # sdk_2013 + uint32 illuminate_players (0, 1, 2 enum)
+LUMP_CLASSES.pop("WORLD_LIGHTS_HDR")  # TODO: check .fgd for illuminate players enum
 
 SPECIAL_LUMP_CLASSES = orange_box.SPECIAL_LUMP_CLASSES.copy()
 
 GAME_LUMP_HEADER = orange_box.GAME_LUMP_HEADER
 
 # {"lump": {version: SpecialLumpClass}}
-GAME_LUMP_CLASSES = {"sprp": {6: lambda raw_lump: source.GameLump_SPRP(raw_lump, None)}}
+GAME_LUMP_CLASSES = {"sprp": {6: source.GameLump_SPRPv6}}
 
 
 methods = [*orange_box.methods]

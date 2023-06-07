@@ -4,7 +4,9 @@ import io
 import struct
 from typing import List
 
+from ... import lumps
 from .. import base
+from .. import vector
 from ..valve import source
 from . import titanfall
 
@@ -103,7 +105,7 @@ class LUMP(enum.Enum):
     MESH_INDICES = 0x004F
     MESHES = 0x0050
     MESH_BOUNDS = 0x0051
-    MATERIAL_SORT = 0x0052
+    MATERIAL_SORTS = 0x0052
     LIGHTMAP_HEADERS = 0x0053
     UNUSED_84 = 0x0054
     CM_GRID = 0x0055
@@ -154,15 +156,15 @@ class LUMP(enum.Enum):
 LumpHeader = source.LumpHeader
 
 
-# Known lump changes from Titanfall -> Titanfall 2:
-# New:
+# known lump changes from Titanfall -> Titanfall 2:
+# new:
 # UNUSED_4 -> LIGHTPROBE_PARENT_INFOS
 # UNUSED_5 -> SHADOW_ENVIRONMENTS
 # UNUSED_6 -> LIGHTPROBE_BSP_NODES
 # UNUSED_7 -> LIGHTPROBE_BSP_REF_IDS
 # UNUSED_55 -> WORLD_LIGHT_PARENT_INFOS
 # UNUSED_122 -> LIGHTMAP_DATA_RTL_PAGE
-# Deprecated:
+# deprecated:
 # LEAF_WATER_DATA
 # PHYSICS_LEVEL
 # PHYSICS_TRIANGLES
@@ -200,7 +202,7 @@ LumpHeader = source.LumpHeader
 # ??? WorldLight <-?-> WorldLightParentInfo -?> Model / Entity?
 
 # CM_* LUMPS
-# the entire GM_GRID lump is always 28 bytes (SpecialLumpClass? flags & world bounds?)
+# GM_GRID holds world bounds & other metadata
 
 # Cell -?> Primitive | PrimitiveBounds
 #     \-?> GeoSet | GeoSetBounds
@@ -225,7 +227,27 @@ class MAX(enum.Enum):
     TEXTURES = 2048
 
 
+# flags enums
+class GeoSetFlags(enum.IntFlag):
+    """Identified by Fifty"""
+    BRUSH = 0x00
+    TRICOLL = 0x40
+
+
 # classes for lumps, in alphabetical order::
+class GeoSet(base.Struct):  # LUMP 87 (0057)
+    unknown: List[int]  # uint16_t[2]
+    child: base.BitField  # struct { uint32_t type: 8, index: 16, unknown: 8; };
+    # child.unknown: int  # may not be relevant to child
+    # child.index: int  # index of Brush / TriCollHeader?
+    # child.type: GeoSetFlags  # Brush or TriColl
+    __slots__ = ["unknown", "child"]
+    _format = "2HI"
+    _arrays = {"unknown": 2}
+    _bitfields = {"child": {"unknown": 8, "index": 16, "type": 8}}
+    _classes = {"child.type": GeoSetFlags}
+
+
 class LightmapPage(base.Struct):  # LUMP 122 (007A)
     data: bytes
     _format = "128s"
@@ -272,45 +294,6 @@ class ShadowEnvironment(base.Struct):
 
 
 # classes for special lumps, in alphabetical order:
-class GameLump_SPRP:
-    """use `lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropvXX)` to implement"""
-    StaticPropClass: object  # StaticPropv13
-    model_names: List[str]  # filenames of all .mdl / .rmdl used
-    unknown_1: int
-    unknown_2: int  # indices?
-    props: List[object]  # List[StaticPropClass]
-    unknown_3: List[bytes]
-
-    def __init__(self, raw_sprp_lump: bytes, StaticPropClass: object):
-        self.StaticPropClass = StaticPropClass
-        sprp_lump = io.BytesIO(raw_sprp_lump)
-        model_names_count = int.from_bytes(sprp_lump.read(4), "little")
-        model_names = struct.iter_unpack("128s", sprp_lump.read(128 * model_names_count))
-        setattr(self, "model_names", [t[0].replace(b"\0", b"").decode() for t in model_names])
-        prop_count, unknown_1, unknown_2 = struct.unpack("3i", sprp_lump.read(12))
-        self.unknown_1, self.unknown_2 = unknown_1, unknown_2
-        read_size = struct.calcsize(StaticPropClass._format) * prop_count
-        props = struct.iter_unpack(StaticPropClass._format, sprp_lump.read(read_size))
-        setattr(self, "props", list(map(StaticPropClass.from_tuple, props)))
-        unknown_3_count = int.from_bytes(sprp_lump.read(4), "little")
-        setattr(self, "unknown_3", [sprp_lump.read(64) for i in range(unknown_3_count)])
-        here = sprp_lump.tell()
-        end = sprp_lump.seek(0, 2)
-        assert here == end, "Had some leftover bytes; unknown_3 is incorrect!"
-
-    def as_bytes(self) -> bytes:
-        if len(self.props) > 0:
-            prop_bytes = [struct.pack(self.StaticPropClass._format, *p.as_tuple()) for p in self.props]
-        else:
-            prop_bytes = []
-        return b"".join([len(self.model_names).to_bytes(4, "little"),
-                        *[struct.pack("128s", n.encode("ascii")) for n in self.model_names],
-                        struct.pack("3I", len(self.props), self.unknown_1, self.unknown_2),
-                        *prop_bytes,
-                        len(self.unknown_3).to_bytes(4, "little"),
-                        *self.unknown_3])
-
-
 class StaticPropv13(base.Struct):  # sprp GAME_LUMP (LUMP 35 / 0023) [version 13]
     """Identified w/ BobTheBob"""
     origin: List[float]  # x, y, z
@@ -335,13 +318,63 @@ class StaticPropv13(base.Struct):  # sprp GAME_LUMP (LUMP 35 / 0023) [version 13
                "lighting_origin": [*"xyz"], "cpu_level": ["min", "max"],
                "gpu_level": ["min", "max"], "diffuse_modulation": [*"rgba"],
                "collision_flags": ["add", "remove"]}
+    _classes = {"origin": vector.vec3, "solid_mode": source.StaticPropCollision, "flags": source.StaticPropFlags,
+                "lighting_origin": vector.vec3}  # TODO: angles QAngle, diffuse_modulation RBGExponent
+
+
+class GameLump_SPRPv13(titanfall.GameLump_SPRPv12):  # sprp GameLump (LUMP 35) [version 13]
+    StaticPropClass: object = StaticPropv13
+    # little endian only
+    model_names: List[str]  # filenames of all .mdl / .rmdl used
+    unknown_1: int  # first_transparent?
+    unknown_2: int  # first_alpha_sort?
+    props: List[StaticPropv13]
+    unknown_3: List[bytes]  # array of some unknown struct; sizeof() = 64
+
+    def __init__(self):
+        self.model_names = list()
+        self.unknown_1 = 0
+        self.unknown_2 = 0
+        self.props = list()
+        self.unknown_3 = list()
+
+    @classmethod
+    def from_bytes(cls, raw_lump: bytes):
+        sprp_lump = io.BytesIO(raw_lump)
+        out = cls()
+        model_name_count = int.from_bytes(sprp_lump.read(4), "little")
+        out.model_names = [sprp_lump.read(128).replace(b"\0", b"").decode() for i in range(model_name_count)]
+        prop_count = int.from_bytes(sprp_lump.read(4), "little")
+        out.unknown_1 = int.from_bytes(sprp_lump.read(4), "little")
+        out.unknown_2 = int.from_bytes(sprp_lump.read(4), "little")
+        out.props = lumps.BspLump.from_count(sprp_lump, prop_count, cls.StaticPropClass)
+        unknown_3_count = int.from_bytes(sprp_lump.read(4), "little")
+        out.unknown_3 = [bytearray(sprp_lump.read(64)) for i in range(unknown_3_count)]
+        assert all([len(u) == 64 for u in out.unknown_3]), "hit end of lump early while getting unknown_3"
+        tail = sprp_lump.read()
+        if len(tail) > 0:
+            raise RuntimeError(f"sprp lump has a tail of {len(tail)} bytes")
+        return out
+
+    def as_bytes(self) -> bytes:
+        assert all([isinstance(p, self.StaticPropClass) for p in self.props])
+        assert all([len(u) == 64 for u in self.unknown_3])
+        return b"".join([len(self.model_names).to_bytes(4, "little"),
+                         *[struct.pack("128s", n.encode("ascii")) for n in self.model_names],
+                         len(self.props).to_bytes(4, self.endianness),
+                         self.unknown_1.to_bytes(4, self.endianness),
+                         self.unknown_2.to_bytes(4, self.endianness),
+                         *[p.as_bytes() for p in self.props],
+                        len(self.unknown_3).to_bytes(4, "little"),
+                        *self.unknown_3])
 
 
 # {"LUMP_NAME": {version: LumpClass}}
 BASIC_LUMP_CLASSES = titanfall.BASIC_LUMP_CLASSES.copy()
 
 LUMP_CLASSES = titanfall.LUMP_CLASSES.copy()
-LUMP_CLASSES.update({"LIGHTMAP_DATA_REAL_TIME_LIGHTS_PAGE": {0: LightmapPage},
+LUMP_CLASSES.update({"CM_GEO_SETS":                         {0: GeoSet},
+                     "LIGHTMAP_DATA_REAL_TIME_LIGHTS_PAGE": {0: LightmapPage},
                      "LIGHTPROBE_REFERENCES":               {0: LightProbeRef},
                      "SHADOW_ENVIRONMENTS":                 {0: ShadowEnvironment},
                      "WORLD_LIGHTS":                        {1: titanfall.WorldLight,
@@ -352,7 +385,8 @@ SPECIAL_LUMP_CLASSES = titanfall.SPECIAL_LUMP_CLASSES.copy()
 
 GAME_LUMP_HEADER = source.GameLumpHeader
 
-GAME_LUMP_CLASSES = {"sprp": {13: lambda raw_lump: GameLump_SPRP(raw_lump, StaticPropv13)}}
+# {"lump": {version: SpecialLumpClass}}
+GAME_LUMP_CLASSES = {"sprp": {13: GameLump_SPRPv13}}
 
-# branch exclusive methods, in alphabetical order:
+
 methods = [*titanfall.methods]

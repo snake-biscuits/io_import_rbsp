@@ -1,10 +1,10 @@
 # https://github.com/ValveSoftware/halflife/blob/master/utils/common/bspfile.h
 # http://hlbsp.sourceforge.net/index.php?content=bspdef
-# https://valvedev.info/tools/bsptwomap/
 import enum
 from typing import List
 
 from .. import base
+from .. import vector
 from ..id_software import quake
 # NOTE: GoldSrc was forked from IdTech 2 during Quake II development
 # -- so some elements of both quake & quake2 formats are present
@@ -43,7 +43,7 @@ class LUMP(enum.Enum):
     LIGHTING = 8
     CLIP_NODES = 9
     LEAVES = 10
-    MARK_SURFACES = 11
+    LEAF_FACES = 11  # MARKSURFACES
     EDGES = 12
     SURFEDGES = 13
     MODELS = 14
@@ -51,34 +51,37 @@ class LUMP(enum.Enum):
 
 LumpHeader = quake.LumpHeader
 
-# Known lump changes from Quake II -> GoldSrc:
-# New:
-#   MARK_SURFACES
+
+# known lump changes from Quake -> GoldSrc:
+#   nothing lol
 
 
-# Engine limits:
+# engine limits:
 class MAX(enum.Enum):
-    ENTITIES = 1024
-    PLANES = 32767
-    MIP_TEXTURES = 512
-    MIP_TEXTURES_SIZE = 0x200000  # in bytes
-    VERTICES = 65535
-    VISIBILITY_SIZE = 0x200000  # in bytes
-    NODES = 32767  # "because negative shorts are contents"
-    TEXTURE_INFO = 8192
-    FACES = 65535
-    LIGHTING_SIZE = 0x200000  # in bytes
-    CLIP_NODES = 32767
-    LEAVES = 8192
-    MARK_SURFACES = 65535
-    EDGES = 256000
-    MODELS = 400
+    # lumps
     BRUSHES = 4096  # for radiant / q2map ?
-    ENTITY_KEY = 32
-    ENTITY_STRING = 128 * 1024
-    ENTITY_VALUE = 1024
-    PORTALS = 65536  # related to leaves
+    CLIP_NODES = 32767
+    EDGES = 256000
+    ENTITES_SIZE = 128 * 1024  # bytesize
+    ENTITIES = 1024
+    FACES = 65535
+    LEAF_FACES = 65535
+    LEAVES = 8192
+    LIGHTING_SIZE = 0x200000  # in bytes
+    MIP_TEXTURES = 512
+    MIP_TEXTURES_SIZE = 0x200000  # bytesize
+    MODELS = 400
+    NODES = 32767  # "because negative shorts are contents"
+    PLANES = 32767
     SURFEDGES = 512000
+    TEXTURE_INFO = 8192
+    VERTICES = 65535
+    VISIBILITY_SIZE = 0x200000  # bytesize
+    # string buffers
+    ENTITY_KEY = 32
+    ENTITY_VALUE = 1024
+    # other
+    MAP_EXTENTS = 4096  # -4096 to 4096, 8192 ** 3 cubic units of space
 
 
 # flag enums
@@ -103,8 +106,19 @@ class Contents(enum.IntFlag):  # src/public/bspflags.h
     CURRENT_DOWN = -14
     TRANSLUCENT = -15
 
+    def __repr__(self):
+        if self < 0:
+            return super().__repr__()
+        return str(int(self))
+
 
 # classes for lumps, in alphabetical order:
+class ClipNode(quake.ClipNode):  # LUMP 9
+    plane: int
+    children: List[int]  # +ve indexes ClipNode, -ve Contents
+    _classes = {"children.front": Contents, "children.back": Contents}
+
+
 class Model(base.Struct):  # LUMP 14
     bounds: List[List[float]]
     # bounds.mins: List[float]  # xyz
@@ -117,14 +131,15 @@ class Model(base.Struct):  # LUMP 14
     __slots__ = ["bounds", "origin", "node", "visleaves", "first_face", "num_faces"]
     _format = "9f7i"
     _arrays = {"bounds": {"mins": [*"xyz"], "maxs": [*"xyz"]}, "origin": [*"xyz"], "node": 4}
+    _classes = {"bounds.mins": vector.vec3, "bounds.maxs": vector.vec3, "origin": vector.vec3}
 
 
 # {"LUMP_NAME": {version: LumpClass}}
 BASIC_LUMP_CLASSES = quake.BASIC_LUMP_CLASSES.copy()
 
 LUMP_CLASSES = quake.LUMP_CLASSES.copy()
-LUMP_CLASSES.update({"MODELS": Model,
-                     "NODES": quake.ClipNode})
+LUMP_CLASSES.update({"CLIP_NODES": ClipNode,
+                     "MODELS":     Model})
 
 SPECIAL_LUMP_CLASSES = quake.SPECIAL_LUMP_CLASSES.copy()
 
