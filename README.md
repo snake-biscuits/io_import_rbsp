@@ -72,6 +72,8 @@ Once you've extracted the files you need:
    - GoldSrc & Source Engine importer (`.bsp`, `.vmt`, `.vtf`, `.mdl`)
  * [SourceOps](https://github.com/bonjorno7/SourceOps)
    - Source Engine model exporter
+ * [Perimeter](https://github.com/EM4Volts/Perimeter)
+   - Titanfall 2 `.mdl` editing QoL tool
  * [PyD3DBSP](https://github.com/mauserzjeh/PyD3DBSP) (Archived)
    - Call of Duty 2 `.bsp` importer
  * [blender_io_mesh_bsp](https://github.com/andyp123/blender_io_mesh_bsp)
