@@ -1,0 +1,8 @@
+* text=auto
+# code
+*.py text eol=lf
+# other text
+*.md text eol=lf
+*.txt text eol=lf
+# binary files
+*.pyc binary
