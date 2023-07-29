@@ -7,10 +7,10 @@ from typing import List
 
 from .. import base
 from .. import shared
-from .. import valve_physics
 from .. import vector
 from ..id_software import remake_quake_old
 from ..nexon import vindictus69
+from ..valve import physics
 from ..valve import sdk_2013
 from ..valve import source
 
@@ -194,7 +194,8 @@ class DisplacementInfo(base.Struct):  # LUMP 26
                  "first_lightmap_alpha", "first_lightmap_sample_position",
                  "edge_neighbours", "corner_neighbours", "allowed_vertices"]
     _format = "3f4ifiI2i144B10I"
-    _arrays = {"edge_neighbours": 72, "corner_neighbours": 72, "allowed_vertices": 10}
+    _arrays = {"start_position": [*"xyz"], "edge_neighbours": 72, "corner_neighbours": 72,
+               "allowed_vertices": 10}
     # 4x DisplacementNeighbour: edge_neighbours
     # 4x DisplacementCornerNeighbours: corner_neighbours
     _classes = {"start_position": vector.vec3, "contents": source.Contents}
@@ -242,7 +243,7 @@ class FaceBrushList(base.MappedArray):  # LUMP 23
 class Leaf(source.Face):  # LUMP 10
     """Endpoint of a vis tree branch, a pocket of Faces"""
     contents: source.Contents
-    cluster: int  # index of viscluster in Visibility
+    cluster: int  # index of viscluster in Visibility; -1 for None
     bitfield: base.BitField
     # bitfield.area: int  # index?
     # bitfield.flags: int  # LeafFlags enum?
@@ -256,7 +257,7 @@ class Leaf(source.Face):  # LUMP 10
     leaf_water_data: int  # index into LeafWaterData
     __slots__ = ["contents", "cluster", "bitfield", "bounds", "first_leaf_face",
                  "num_leaf_faces", "first_leaf_brush", "num_leaf_brushes", "leaf_water_id"]
-    _format = "3I6f4Ii"
+    _format = "IiI6f4Ii"
     _arrays = {"bounds": {"mins": [*"xyz"], "maxs": [*"xyz"]}}
     _bitfields = {"bitfield": {"area": 17, "flags": 15}}
     _classes = {"contents": source.Contents, "bounds.mins": vector.vec3, "bounds.maxs": vector.vec3}
@@ -338,7 +339,7 @@ class WaterOverlay(base.Struct):  # LUMP 50
 
 
 # special lump classes, in alphabetical order:
-class PhysicsDisplacement(valve_physics.Displacement):  # LUMP 28
+class PhysicsDisplacement(physics.Displacement):  # LUMP 28
     _format = "I"
 
 

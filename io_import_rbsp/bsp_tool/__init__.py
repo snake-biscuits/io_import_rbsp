@@ -1,7 +1,7 @@
 """A library for .bsp file analysis & modification"""
 __all__ = ["base", "branches", "load_bsp", "lumps", "D3DBsp", "FusionBsp",
-           "GoldSrcBsp", "IdTechBsp", "InfinityWardBsp", "QuakeBsp", "RavenBsp",
-           "ReMakeQuakeBsp", "RespawnBsp", "RitualBsp", "ValveBsp"]
+           "GoldSrcBsp", "IdTechBsp", "InfinityWardBsp", "QuakeBsp", "Quake64Bsp",
+           "RavenBsp", "ReMakeQuakeBsp", "RespawnBsp", "RitualBsp", "ValveBsp"]
 
 import os
 from types import ModuleType
@@ -9,7 +9,7 @@ from types import ModuleType
 from . import base  # base.Bsp base class
 from . import branches  # all known .bsp variant definitions
 from . import lumps
-from .id_software import FusionBsp, IdTechBsp, QuakeBsp, ReMakeQuakeBsp
+from .id_software import FusionBsp, IdTechBsp, QuakeBsp, Quake64Bsp, ReMakeQuakeBsp
 from .infinity_ward import D3DBsp, InfinityWardBsp
 from .raven import RavenBsp
 from .respawn import RespawnBsp
@@ -17,19 +17,20 @@ from .ritual import RitualBsp
 from .valve import GoldSrcBsp, ValveBsp
 
 
-BspVariant_from_file_magic = {b"2015": RitualBsp,
-                              b"2PSB": ReMakeQuakeBsp,
-                              b"BSP2": ReMakeQuakeBsp,
-                              b"EALA": RitualBsp,
-                              b"EF2!": RitualBsp,
-                              b"FAKK": RitualBsp,
-                              b"FBSP": FusionBsp,
-                              b"IBSP": IdTechBsp,  # + InfinityWardBsp + D3DBsp
-                              b"PSBr": RespawnBsp,  # Xbox360
-                              b"PSBV": ValveBsp,  # Xbox360
-                              b"rBSP": RespawnBsp,
-                              b"RBSP": RavenBsp,
-                              b"VBSP": ValveBsp}
+BspVariant_for_magic = {b" 46Q": Quake64Bsp,
+                        b"2015": RitualBsp,
+                        b"2PSB": ReMakeQuakeBsp,
+                        b"BSP2": ReMakeQuakeBsp,
+                        b"EALA": RitualBsp,
+                        b"EF2!": RitualBsp,
+                        b"FAKK": RitualBsp,
+                        b"FBSP": FusionBsp,
+                        b"IBSP": IdTechBsp,  # OR InfinityWardBsp OR D3DBsp
+                        b"PSBr": RespawnBsp,  # Xbox360
+                        b"PSBV": ValveBsp,  # Xbox360
+                        b"rBSP": RespawnBsp,
+                        b"RBSP": RavenBsp,
+                        b"VBSP": ValveBsp}
 # NOTE: if no file_magic is present:
 # - QuakeBsp
 # - GoldSrcBsp
@@ -56,10 +57,8 @@ def load_bsp(filename: str, branch_script: ModuleType = None) -> base.Bsp:
     # parse header
     with open(filename, "rb") as bsp_file:
         file_magic = bsp_file.read(4)
-        if file_magic in (b"2PSB", b"BSP2"):
+        if file_magic in (b" 46Q", b"2PSB", b"BSP2"):
             version = None
-        # elif file_magic == b"BSP2":
-        #     return ReMakeQuakeBsp(branches.id_software.remake_quake, filename)
         # endianness
         elif file_magic in (b"PSBr", b"PSBV"):  # big endian
             version = int.from_bytes(bsp_file.read(4), "big")
@@ -76,7 +75,7 @@ def load_bsp(filename: str, branch_script: ModuleType = None) -> base.Bsp:
         else:
             BspVariant = InfinityWardBsp
     elif filename.lower().endswith(".bsp"):
-        if file_magic not in BspVariant_from_file_magic:  # Quake / GoldSrc
+        if file_magic not in BspVariant_for_magic:  # Quake / GoldSrc
             version = int.from_bytes(file_magic, "little")
             if version in Quake_versions:
                 BspVariant = QuakeBsp
@@ -91,14 +90,14 @@ def load_bsp(filename: str, branch_script: ModuleType = None) -> base.Bsp:
             if file_magic == b"IBSP" and version in InfinityWard_versions:
                 BspVariant = InfinityWardBsp
             else:
-                BspVariant = BspVariant_from_file_magic[file_magic]
+                BspVariant = BspVariant_for_magic[file_magic]
     else:  # invalid extension
         raise RuntimeError(f"{filename} is not a .bsp file!")
-    # TODO: ata4's bspsrc uses unique entity classnames to identify branches
-    # -- need this for identifying variants with overlapping identifiers
     # identify branch script
     if branch_script is None:
-        branch_script = branches.script_from_file_magic_and_version[(file_magic, version)]
+        branch_script = branches.identify[(file_magic, version)]
+    # TODO: ata4's bspsrc uses unique entity classnames to identify branches
+    # -- need this for identifying variants with overlapping identifiers
     return BspVariant(branch_script, filename, autoload=True)  # might raise errors
 
 

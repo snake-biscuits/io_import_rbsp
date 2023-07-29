@@ -230,6 +230,18 @@ LumpHeader = source.LumpHeader
 #   BVH_NODES = 0x0012  # BVH4 collision tree
 #   BVH_LEAF_DATA = 0x0013  # parallel w/ content masks & nodes?
 
+# BVHNode -> BVHNode
+#        \-> BVHLeafData
+
+# Type 0 & 1 are for BVHNode / None
+# BVHLeafData2 -?>
+# BVHLeafData3 -?>
+# BVHLeafData4 -> Vertices
+# BVHLeafData5 -> PackedVertices
+# BVHLeafData6 -> Vertices
+# BVHLeafData7 -> PackedVertices
+# BVHLeafData8-15?
+
 # PACKED_VERTICES is parallel with VERTICES?
 
 
@@ -240,29 +252,46 @@ https://www.youtube.com/watch?v=6BIfqfC1i7U
 https://gdcvault.com/play/1025126/Extreme-SIMD-Optimized-Collision-Detection"""
     BVH_NODE = 0x00
     NO_CHILD = 0x01
+    UNUSED_2 = 0x02
     # primitive types:
-    UNKNOWN_2 = 0x02  # edge?
-    UNKNOWN_3 = 0x03
-    UNKNOWN_4 = 0x04
-    UNKNOWN_5 = 0x05
-    UNKNOWN_6 = 0x06
-    UNKNOWN_7 = 0x07
-    UNKNOWN_8 = 0x08
-    UNKNOWN_9 = 0x09
-    UNKNOWN_10 = 0x0A
-    UNKNOWN_11 = 0x0B
-    UNKNOWN_12 = 0x0C
-    UNKNOWN_13 = 0x0D
-    UNKNOWN_14 = 0x0E
-    UNKNOWN_15 = 0x0F
+    UNKNOWN_3 = 0x03  # points to other leaves
+    TRI_REGULAR = 0x04
+    TRI_PACKED = 0x05
+    QUAD_REGULAR = 0x06
+    QUAD_PACKED = 0x07
+    UNKNOWN_8 = 0x08  # rare
+    UNKNOWN_9 = 0x09  # common
+    # UNUSED_10-15
+    # NOTE: packed types are most accurate for "on-grid" coords close to world origin
 
 
 # classes for lumps, in alphabetical order:
+class BVHLeaf5Header(base.BitField):  # LUMP 19 (0013) [type 5]
+    """TricollHeader with less diverse children"""
+    unknown: int
+    num_triangles: int  # number of BVHLeaf5Triangle after this header
+    first_vertex: int  # starting index into PackedVertices
+    _format = "I"
+    _fields = {"unknown": 12, "num_triangles": 4, "first_vertex": 16}
+
+
+class BVHLeaf5Triangle(base.BitField):  # LUMP 19 (0013) [type 5]
+    """TricollTriangle w/ more indices & less flags"""
+    A: int  # index into PackedVertices
+    B: int  # index into PackedVertices
+    C: int  # index into PackedVertices
+    # TODO: work out indexing math, could match TricollTriangle
+    edge_mask: int  # mask for each edge; one bit per edge?
+    _format = "I"
+    _fields = {"A": 11, "B": 9, "C": 9, "edge_mask": 3}
+
+
 class BVHNode(base.Struct):  # LUMP 18 (0012)
     """BVH4 (GDC 2018 - Extreme SIMD: Optimized Collision Detection in Titanfall)
 https://www.youtube.com/watch?v=6BIfqfC1i7U
 https://gdcvault.com/play/1025126/Extreme-SIMD-Optimized-Collision-Detection"""
     # Identified by Fifty & Rexx, matched to GDC talk spec
+    # Corrected w/ help from Rexx & Rika
     # |     child0    |     child1    |     child2    |     child3    |
     # | min x | max x | min x | max x | min x | max x | min x | max x |
     # | min y | max y | min y | max y | min y | max y | min y | max y |
@@ -273,46 +302,69 @@ https://gdcvault.com/play/1025126/Extreme-SIMD-Optimized-Collision-Detection"""
     y: List[List[int]]  # y.child0.min .. y.child3.max
     z: List[List[int]]  # z.child0.min .. z.child3.max
     index: List[List[int]]  # child indices and metadata
-    # NOTE: bitfields are definitely all wrong, not all padding is 0
-    # NOTE: index.child2.collision_mask should be an index (SurfaceProperties?)
+    # index.child0.contents_mask: int  # index into ContentsMasks
     __slots__ = [*"xyz", "index"]
     _format = "24h4I"
     _arrays = {axis: {f"child{i}": ["min", "max"] for i in range(4)} for axis in [*"xyz"]}
     _arrays.update({"index": [f"child{i}" for i in range(4)]})
-    _bitfields = {"index.child0": {"child0_type": 4, "child1_type": 4, "index": 24},
-                  "index.child1": {"child2_type": 4, "child3_type": 4, "index": 24},
-                  "index.child2": {"collision_mask": 8, "index": 24},
-                  "index.child3": {"padding": 8, "index": 24}}
-    _classes = {"index.child0.child0_type": BVHNodeType, "index.child0.child1_type": BVHNodeType,
-                "index.child1.child2_type": BVHNodeType, "index.child1.child3_type": BVHNodeType}
+    _bitfields = {"index.child0": {"contents_mask": 8, "index": 24},
+                  "index.child1": {"padding": 8, "index": 24},
+                  "index.child2": {"child0_type": 4, "child1_type": 4, "index": 24},
+                  "index.child3": {"child2_type": 4, "child3_type": 4, "index": 24}}
+    _classes = {"index.child2.child0_type": BVHNodeType, "index.child2.child1_type": BVHNodeType,
+                "index.child3.child2_type": BVHNodeType, "index.child3.child3_type": BVHNodeType}
 
-    # TODO: remap w/ properties and use a bounding box class
-    # node.children[0].mins.x
-    # node.children[1].index  # TODO: might need to allow signed bitfield members
-    # node.collision_mask
+    @property
+    def children(self) -> List[object]:
+
+        class BVHChildNode:
+            # TODO: inherit from some AABB class for math utils
+            mins: vector.vec3
+            maxs: vector.vec3
+            type: BVHNodeType
+            index: int
+
+            def __init__(self, parent, i):
+                name = f"child{i}"
+                mmx = getattr(parent.x, name)
+                mmy = getattr(parent.y, name)
+                mmz = getattr(parent.z, name)
+                # TODO: enforce Vec3<uint16_t>
+                self.mins = vector.vec3(mmx[0], mmy[0], mmz[0])
+                self.maxs = vector.vec3(mmx[1], mmy[1], mmz[1])
+                self.type = getattr(getattr(parent.index, f"child{2 + i // 2}"), f"child{i}_type")
+                self.index = getattr(parent.index, name).index
+
+            def __repr__(self):
+
+                def mm(a):
+                    mins = f"mins.{a} = {str(int(getattr(self.mins, a))):>6}"
+                    maxs = f"maxs.{a} = {str(int(getattr(self.maxs, a))):>6}"
+                    return " ".join(["|", mins, "|", maxs, "|"])
+
+                out = [mm(a) for a in [*"xyz"]]
+                out.extend([f"| type = {str(self.type):<26} |", f"| index = {self.index:<25} |"])
+                return "\n".join(out)
+
+        return [BVHChildNode(self, i) for i in range(4)]
+
+    @property
+    def contents_mask(self) -> int:
+        return self.index.child0.contents_mask
+
+    @property
+    def padding(self) -> int:
+        return self.index.child1.padding
 
     def __repr__(self) -> str:
         out = list()
-
-        def minmax(node: BVHNode, axis: str, child: str) -> str:
-            a = getattr(getattr(node, axis), child)
-            return f"min.{axis} = {str(a.min):<6} | max.{axis} = {str(a.max):<6}"
-
-        out.append("| ------------ child0 ----------- | ------------ child1 ----------- |")
-        out.append(f"| {minmax(self, 'x', 'child0')} | {minmax(self, 'x', 'child1')} |")
-        out.append(f"| {minmax(self, 'y', 'child0')} | {minmax(self, 'y', 'child1')} |")
-        out.append(f"| {minmax(self, 'z', 'child0')} | {minmax(self, 'z', 'child1')} |")
-        out.append(f"| index = {str(self.index.child0.index):<23} | index = {str(self.index.child1.index):<23} |")
-        out.append(f"| type = {str(self.index.child0.child0_type):<24} | type = {str(self.index.child0.child1_type):<24} |")
-        out.append("| ------------ child2 ----------- | ------------ child3 ----------- |")
-        out.append(f"| {minmax(self, 'x', 'child2')} | {minmax(self, 'x', 'child3')} |")
-        out.append(f"| {minmax(self, 'y', 'child2')} | {minmax(self, 'y', 'child3')} |")
-        out.append(f"| {minmax(self, 'z', 'child2')} | {minmax(self, 'z', 'child3')} |")
-        out.append(f"| index = {str(self.index.child2.index):<23} | index = {str(self.index.child3.index):<23} |")
-        out.append(f"| type = {str(self.index.child1.child2_type):<24} | type = {str(self.index.child1.child3_type):<24} |")
-        out.append(f"| collision_mask = {str(self.index.child2.collision_mask):<48} |")
-        out.append(f"| padding = {str(self.index.child2.collision_mask):<55} |")
-        # NOTE: padding is not displayed with this method
+        c = self.children
+        out.append("| ---------- children[0] ---------- | ---------- children[1] ---------- |")
+        out.extend([f"{a}{b[1:]}" for a, b in zip(repr(c[0]).split("\n"), repr(c[1]).split("\n"))])
+        out.append("| ---------- children[2] ---------- | ---------- children[3] ---------- |")
+        out.extend([f"{a}{b[1:]}" for a, b in zip(repr(c[2]).split("\n"), repr(c[3]).split("\n"))])
+        out.append(f"| contents_mask = {str(self.contents_mask):<53} |")
+        # NOTE: padding is not displayed as it should always be 0
         return "\n".join(out)
 
 
@@ -513,10 +565,10 @@ LUMP_CLASSES.update({"BVH_NODES":          {0: BVHNode},
 
 SPECIAL_LUMP_CLASSES = titanfall2.SPECIAL_LUMP_CLASSES.copy()
 SPECIAL_LUMP_CLASSES.pop("CM_GRID")
-SPECIAL_LUMP_CLASSES.pop("PHYSICS_COLLIDE")
+# SPECIAL_LUMP_CLASSES.pop("PHYSICS_COLLIDE")  # currently disabled in titanfall.py
 SPECIAL_LUMP_CLASSES.pop("TEXTURE_DATA_STRING_DATA")
 SPECIAL_LUMP_CLASSES.update({"LEVEL_INFO":    {0: LevelInfo},
-                             "SURFACE_NAMES": {0: shared.TextureDataStringData}})
+                             "SURFACE_NAMES": {0: source.TextureDataStringData}})
 
 
 GAME_LUMP_HEADER = source.GameLumpHeader

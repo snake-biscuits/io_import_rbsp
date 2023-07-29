@@ -1,8 +1,6 @@
-import io
 import math
 import re
-import zipfile
-from typing import Any, Dict, List
+from typing import Dict, List
 
 
 # Basic Lump Classes
@@ -51,19 +49,18 @@ class Entities(list):
     # TODO: search_any_regex
 
     def as_bytes(self) -> bytes:
-        entities = []
+        entities = list()
         for entity_dict in self:  # Dict[str, Union[str, List[str]]]
-            entity = ["{"]
+            entity = list()
             for key, value in entity_dict.items():
                 if isinstance(value, str):
                     entity.append(f'"{key}" "{value}"')
                 elif isinstance(value, list):  # multiple entries
                     entity.extend([f'"{key}" "{v}"' for v in value])
                 else:
-                    raise RuntimeError("Entity values must be")
-            entity.append("}")
-            entities.append("\n".join(entity))
-        return b"\n".join(map(lambda e: e.encode("ascii"), entities)) + b"\n\x00"
+                    raise RuntimeError("Entity values must be either a string or list of strings")
+            entities.append("\n".join(["{", *entity, "}"]).encode("ascii", errors="ignore"))
+        return b"\n".join(entities) + b"\n\x00"
 
     @classmethod
     def from_bytes(cls, raw_lump: bytes):
@@ -100,7 +97,7 @@ class Entities(list):
                 if key not in ent:
                     ent[key] = value
                 else:  # don't override duplicate keys, share a list instead
-                    # generally duplicate keys are ouputs
+                    # generally duplicate keys are outputs (e.g. OnMapSpawn)
                     if isinstance(ent[key], list):  # more than 2 of this key
                         ent[key].append(value)
                     else:  # second occurance of key
@@ -114,46 +111,6 @@ class Entities(list):
             else:
                 raise RuntimeError(f"Unexpected line in entities: L{line_no + 1}: {line.encode()}")
         return cls(entities)
-
-
-class PakFile(zipfile.ZipFile):
-    _buffer: io.BytesIO
-
-    def __init__(self, file: Any = None):
-        """always a read-only copy of the lump"""
-        if file is None:
-            self._buffer = io.BytesIO(b"")
-        elif isinstance(file, io.BytesIO):
-            self._buffer = file
-        elif isinstance(file, str):
-            self._buffer = io.BytesIO(open(file, "rb").read())
-        else:
-            raise TypeError(f"Cannot create {self.__class__.__name__} from type '{type(file)}'")
-        super().__init__(self._buffer, "r")
-
-    def as_bytes(self) -> bytes:
-        return self._buffer.getvalue()
-
-    @classmethod
-    def from_bytes(cls, raw_lump: bytes):
-        return cls(io.BytesIO(raw_lump))
-
-
-class TextureDataStringData(list):
-    def __init__(self, iterable: List[str] = tuple()):
-        super().__init__(iterable)
-
-    # TODO: use regex to search
-    # def find(self, pattern: str) -> List[str]:
-    #     pattern = pattern.lower()
-    #     return fnmatch.filter(map(str.lower, self), f"*{pattern}*")
-
-    def as_bytes(self) -> bytes:
-        return b"\0".join([t.encode("ascii") for t in self]) + b"\0"
-
-    @classmethod
-    def from_bytes(cls, raw_lump: bytes):
-        return cls([t.decode("ascii", errors="ignore") for t in raw_lump[:-1].split(b"\0")])
 
 
 # methods

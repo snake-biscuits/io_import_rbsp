@@ -6,15 +6,16 @@ from __future__ import annotations
 import enum
 import io
 import struct
-from typing import List
+from typing import Any, List
+import zipfile
 
 from ... import lumps
 from .. import base
 from .. import shared
-from .. import valve_physics
 from .. import vector
 from ..id_software import quake
 from ..id_software import quake2
+from . import physics
 
 
 FILE_MAGIC = b"VBSP"
@@ -550,7 +551,7 @@ class Face(base.Struct):  # LUMPS 7, 27 & 58
 class Leaf(base.Struct):  # LUMP 10
     """Endpoint of a vis tree branch, a pocket of Faces"""
     contents: Contents
-    cluster: int  # index of this Leaf's cluster (leaf group in VISIBILITY lump)
+    cluster: int  # index of this Leaf's cluster (leaf group in VISIBILITY lump); -1 for None
     bitfield: base.BitField  # area & flags bitfield
     # bitfield.area  # index into Areas?
     # bitfield.flags  # TODO: LeafFlags enum
@@ -567,7 +568,7 @@ class Leaf(base.Struct):  # LUMP 10
     __slots__ = ["contents", "cluster", "area_flags", "bounds",
                  "first_leaf_face", "num_leaf_faces", "first_leaf_brush",
                  "num_leaf_brushes", "leaf_water_data", "padding", "cube"]
-    _format = "i2H6h4H2h24B"
+    _format = "ihH6h4H2h24B"
     _arrays = {"bounds": {"mins": [*"xyz"], "maxs": [*"xyz"]},
                "cube": {x: [*"rgbe"] for x in "ABCDEF"}}  # integer keys in _mapping would be nicer
     # TODO: map cube face names to UP, DOWN etc.
@@ -583,7 +584,7 @@ class LeafAmbientIndex(base.MappedArray):  # LUMP 52
     _mapping = ["num_samples", "first_sample"]
 
 
-class LeafAmbientSample(base.MappedArray):  # LUMP 56
+class LeafAmbientSample(base.Struct):  # LUMP 56
     """cube of lighting samples"""
     cube: List[List[int]]  # unsure about orientation / face order
     origin: vector.vec3  # uint8_t; "fixed point fraction of Leaf bounds"
@@ -824,7 +825,7 @@ class GameLump_SPRPv4:  # sprp GameLump (LUMP 35)
         assert all([isinstance(p, self.StaticPropClass) for p in self.props])
         leaves_format = {"little": "<H", "big": ">H"}[self.endianness]
         return b"".join([int.to_bytes(len(self.model_names), 4, self.endianness),
-                         *[struct.pack("128s", n) for n in self.model_names],
+                         *[struct.pack("128s", n.encode("ascii")) for n in self.model_names],
                          int.to_bytes(len(self.leaves), 4, self.endianness),
                          *[struct.pack(leaves_format, L) for L in self.leaves],
                          int.to_bytes(len(self.props), 4, self.endianness),
@@ -918,6 +919,54 @@ class GameLump_SPRPv7(GameLump_SPRPv6):  # sprp GameLump (LUMP 35)
     StaticPropClass = StaticPropv7
 
 
+class PakFile(zipfile.ZipFile):  # LUMP 40
+    _buffer: io.BytesIO
+
+    def __init__(self, file_: Any = None, mode: str = "a", **kwargs):
+        """always a read-only copy of the lump"""
+        if file_ is None:
+            empty_zip = [b"PK\x05\x06", b"\x00" * 16, b"\x20\x00XZP1 0", b"\x00" * 26]
+            self._buffer = io.BytesIO(b"".join(empty_zip))
+        elif isinstance(file_, io.BytesIO):  # BspClass will take this route via .from_bytes()
+            self._buffer = file_
+        elif isinstance(file_, str):
+            self._buffer = io.BytesIO(open(file_, "rb").read())
+        else:
+            raise TypeError(f"Cannot create {self.__class__.__name__} from type '{type(file_)}'")
+        super().__init__(self._buffer, mode=mode, **kwargs)
+
+    def __repr__(self) -> str:
+        dev_branch_class = ".".join([*self.__module__.split(".")[-2:], self.__class__.__name__])
+        return f"<{dev_branch_class} {len(self.namelist())} files mode='{self.mode}' @ 0x{id(self):016X}>"
+
+    def as_bytes(self) -> bytes:
+        # write ending records if edits were made (adapted from ZipFile.close)
+        if self.mode in "wxa" and self._didModify and self.fp is not None:
+            with self._lock:
+                if self._seekable:
+                    self.fp.seek(self.start_dir)
+                self._write_end_record()
+        self._didModify = False  # don't double up when .close() is called
+        # NOTE: .close() can get funky but it's OK because ._buffer isn't a real file
+        return self._buffer.getvalue()
+
+    @classmethod
+    def from_bytes(cls, raw_lump: bytes):
+        return cls(io.BytesIO(raw_lump))
+
+
+class TextureDataStringData(list):  # LUMP 43
+    def __init__(self, iterable: List[str] = tuple()):
+        super().__init__(iterable)
+
+    def as_bytes(self) -> bytes:
+        return b"\0".join([t.encode("ascii") for t in self]) + b"\0"
+
+    @classmethod
+    def from_bytes(cls, raw_lump: bytes):
+        return cls([t.decode("ascii", errors="ignore") for t in raw_lump[:-1].split(b"\0")])
+
+
 # {"LUMP_NAME": {version: LumpClass}}
 BASIC_LUMP_CLASSES = {"DISPLACEMENT_TRIANGLES":    {0: DisplacementTriangle},
                       "FACE_IDS":                  {0: shared.UnsignedShorts},
@@ -947,25 +996,25 @@ LUMP_CLASSES = {"AREAS":                     {0: Area},
                 "LEAF_WATER_DATA":           {0: LeafWaterData},
                 "MODELS":                    {0: Model},
                 "NODES":                     {0: Node},
+                "ORIGINAL_FACES":            {0: Face},
                 "OVERLAY":                   {0: Overlay},
                 "OVERLAY_FADES":             {0: OverlayFade},
-                "ORIGINAL_FACES":            {0: Face},
                 "PLANES":                    {0: quake.Plane},
                 "PRIMITIVES":                {0: Primitive},
                 "PRIMITIVE_VERTICES":        {0: quake.Vertex},
                 "TEXTURE_DATA":              {0: TextureData},
                 "TEXTURE_INFO":              {0: TextureInfo},
-                "VERTICES":                  {0: quake.Vertex},
                 "VERTEX_NORMALS":            {0: quake.Vertex},
+                "VERTICES":                  {0: quake.Vertex},
                 "WATER_OVERLAYS":            {0: WaterOverlay},
                 "WORLD_LIGHTS":              {0: WorldLight},
                 "WORLD_LIGHTS_HDR":          {0: WorldLight}}
 
 SPECIAL_LUMP_CLASSES = {"ENTITIES":                 {0: shared.Entities},
-                        "TEXTURE_DATA_STRING_DATA": {0: shared.TextureDataStringData},
-                        "PAKFILE":                  {0: shared.PakFile},
-                        "PHYSICS_COLLIDE":          {0: valve_physics.CollideLump},
-                        "PHYSICS_DISPLACEMENT":     {0: valve_physics.Displacement},
+                        "PAKFILE":                  {0: PakFile},
+                        # "PHYSICS_COLLIDE":          {0: physics.CollideLump},  # BROKEN .as_bytes()
+                        "PHYSICS_DISPLACEMENT":     {0: physics.Displacement},
+                        "TEXTURE_DATA_STRING_DATA": {0: TextureDataStringData},
                         "VISIBILITY":               {0: quake2.Visibility}}
 
 

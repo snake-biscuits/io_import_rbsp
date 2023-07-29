@@ -3,12 +3,14 @@
 import enum
 import io
 import itertools
+import math
 import struct
 from typing import List
 
 from . import quake
 from .. import base
 from .. import shared
+from .. import vector
 
 
 FILE_MAGIC = b"IBSP"
@@ -146,16 +148,18 @@ class Surface(enum.IntFlag):  # qcommon/qfiles.h
 
 # classes for lumps, in alphabetical order:
 class Brush(base.MappedArray):  # LUMP 14
-    first_side: int
-    num_sides: int
+    first_brush_side: int  # first BrushSide of this Brush
+    num_brush_sides: int  # number of BrushSides after first_brush_side on this Brush
     contents: int
-    _mapping = ["first_side", "num_sides", "contents"]
+    _mapping = ["first_brush_side", "num_brush_sides", "contents"]
     _format = "3i"
+    _classes = {"contents": Contents}
 
 
 class BrushSide(base.MappedArray):  # LUMP 15
-    plane: int
-    texture_info: int
+    plane: int  # Plane this BrushSide lies on
+    texture_info: int  # TextureInfo of this BrushSide
+    _mapping = ["plane", "texture_info"]
     _format = "Hh"
 
 
@@ -176,26 +180,28 @@ class Leaf(base.Struct):  # LUMP 10
 
 class Model(base.Struct):  # LUMP 13
     bounds: List[float]  # mins & maxs
-    origin: List[float]
-    first_node: int  # first node in NODES lumps
-    first_face: int
-    num_faces: int
+    origin: List[float]  # starting position
+    first_node: int  # first Node in this Model
+    first_face: int  # first Face in this Model
+    num_faces: int  # number of Faces in this Model after first_face
     __slots__ = ["bounds", "origin", "first_node", "first_face", "num_faces"]
     _format = "9f3i"
     _arrays = {"bounds": {"mins": [*"xyz"], "maxs": [*"xyz"]}, "origin": [*"xyz"]}
 
 
 class Node(base.Struct):  # LUMP 4
-    plane_index: int
+    plane: int  # index of Plane that splits this Node
     children: List[int]  # +ve Node, -ve Leaf
     # NOTE: -1 (leaf 0) is a dummy leaf & terminates tree searches
-    bounds: List[int]
+    bounds: List[List[int]]  # mins & maxs
     # NOTE: bounds are generous, rounding up to the nearest 16 units
-    first_face: int
-    num_faces: int
+    first_face: int  # index of the first Face in this Node
+    num_faces: int  # number of Faces in this Node after first_face
+    __slots__ = ["plane", "children", "bounds", "first_face", "num_faces"]
     _format = "I2i8h"
     _arrays = {"children": ["front", "back"],
                "bounds": {"mins": [*"xyz"], "maxs": [*"xyz"]}}
+    _classes = {"bounds.mins": vector.vec3, "bounds.maxs": vector.vec3}  # TODO: ivec3
 
 
 class TextureInfo(base.Struct):  # LUMP 5
@@ -214,6 +220,7 @@ class TextureInfo(base.Struct):  # LUMP 5
 # special lump classes, in alphabetical order:
 class Visibility:
     """Developed with maxdup"""
+    # TODO: endianness
     # https://www.flipcode.com/archives/Quake_2_BSP_File_Format.shtml
     # NOTE: cluster index comes from Leaf.cluster
     # -- https://github.com/ericwa/ericw-tools/blob/master/vis/vis.cc
@@ -222,11 +229,12 @@ class Visibility:
     pvs: List[bytes]  # Potential Visible Set
     pas: List[bytes]  # Potential Audible Set
     # TODO: List[bool] -> bytes
-    # -- sum([2 ** i if b else 0 for i, b in enumerate(x)]).to_bytes(len(x) // 8 + 1 if len(x) % 8 != 0 else 0, "big")
+    # -- sum([2 ** i if b else 0 for i, b in enumerate(x)]).to_bytes(math.ciel(len(x) / 8), "big")
     # TODO: bytes -> List[bool]
     # -- [b == "1" for b in f"{int.from_bytes(x, 'big'):b}"[::-1]]
 
     def __init__(self, pvs_table: List[List[bool]] = tuple(), pas_table: List[List[bool]] = tuple()):
+        assert len(pvs_table) == len(pas_table)
         self.pvs = pvs_table
         self.pas = pas_table
 
@@ -237,60 +245,56 @@ class Visibility:
         offsets = list(struct.iter_unpack("2I", _buffer.read(8 * num_clusters)))
         pvs, pas = list(), list()
         for pvs_offset, pas_offset in offsets:
+            # get Potentially Visible Set
             _buffer.seek(pvs_offset)
             pvs.append(cls.run_length_decode(_buffer, num_clusters))
+            # get Potentially Audible Set
             _buffer.seek(pas_offset)
             pas.append(cls.run_length_decode(_buffer, num_clusters))
-            # TODO: treat bytes as List[bool]
         return cls(pvs, pas)
 
     @staticmethod
     def run_length_decode(stream: io.BytesIO, num_clusters: int) -> bytes:
-        # https://github.com/ericwa/ericw-tools/blob/master/common/bspfile.cc#L4412-L4439
         out = list()
-        out_size = num_clusters // 8 + 1 if num_clusters % 8 else 0
-        while(len(out) < out_size):
-            byte = stream.read(1)
-            if byte != 0:
+        out_size = math.ceil(num_clusters / 8)
+        while len(out) < out_size:
+            byte = int(stream.read(1).hex(), 16)
+            if byte == 0:
+                count = int(stream.read(1).hex(), 16)
+                assert count != 0, "stream is not compressed"
+                out.extend([0] * count)
+            else:
                 out.append(byte)
-                continue
-            count = stream.read(1)
-            assert count != 0, "stream is not compressed"
-            out.extend([0] * count)
-        return b"".join(out)
+        return bytes(out)
 
     @staticmethod
     def run_length_encode(data: bytes) -> bytes:
-        # https://github.com/ericwa/ericw-tools/blob/master/common/bspfile.cc#L4382-L4404
-        out = list()
-        i = 0
-        while (i < len(data)):
-            byte = data[i]
-            i += 1
-            if byte != 0:
-                out.append(byte)
-                continue
-            count = 1
-            while data[i] == 0 and count < 255 and i < len(data):
-                count += 1
-                i += 1
-            out.extend([0, count])
+        out, zeroes = list(), 0
+        for byte in data:
+            if byte == 0:
+                zeroes += 1
+                if zeroes == 0xFF:
+                    out.extend([0x00, zeroes])
+                    zeroes = 0
+            else:
+                out.extend([0x00, zeroes, byte] if zeroes != 0 else [byte])
+                zeroes = 0
+        out.extend([0x00, zeroes] if zeroes != 0 else [])
         return bytes(out)
 
     def as_bytes(self) -> bytes:
-        # TODO: test
-        # TODO: reduce pvs & pas to a set of each unique flag sequence
-        # -- then index that fixed list of pvs/pas flags for extra compression
-        assert len(self.PVS) == len(self.PAS)
-        num_clusters = len(self.PVS)
-        compressed_pvs = [self.run_length_encode(d) for d in self.PVS]
-        compressed_pas = [self.run_length_encode(d) for d in self.PAS]
-        pvs_offsets = [4 + sum(map(len, compressed_pvs[:i])) for i in range(num_clusters)]
-        offset = pvs_offsets[-1] + len(compressed_pvs[-1])
-        pas_offsets = [offset + sum(map(len, compressed_pas[:i])) for i in range(num_clusters)]
-        header = [num_clusters, *itertools.chain(*zip(pvs_offsets, pas_offsets))]
-        data = list(itertools.chain(*zip(compressed_pvs, compressed_pas)))
-        return b"".join([*[x.to_bytes(4, "little") for x in header], *data])
+        """should be a byte-for-byte match"""
+        assert len(self.pvs) == len(self.pas)
+        num_clusters = len(self.pvs)
+        interleaved_sets = list(itertools.chain(*zip(self.pvs, self.pas)))
+        compressed_sets = list()
+        offsets = [4 + (num_clusters * 8)]
+        for s in interleaved_sets:
+            compressed_sets.append(self.run_length_encode(s))
+            offsets.append(offsets[-1] + len(compressed_sets[-1]))
+        header = struct.pack(f"{len(offsets)}I", num_clusters, *offsets[:-1])
+        assert len(header) + sum(map(len, compressed_sets)) == offsets[-1]
+        return b"".join([header, *compressed_sets])
 
 
 # {"LUMP": LumpClass}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .. import shared
 from .. import x360
+from ..valve import source
 from . import titanfall
 
 
@@ -35,7 +36,11 @@ class GameLump_SPRPv12_x360(titanfall.GameLump_SPRPv12):  # sprp GameLump (LUMP 
 
 
 # {"LUMP_NAME": {version: LumpClass}}
-BASIC_LUMP_CLASSES, LumpClasses = x360.convert_versioned(titanfall.BASIC_LUMP_CLASSES)
+BASIC_LUMP_CLASSES = titanfall.BASIC_LUMP_CLASSES.copy()
+# big-endian BitField not yet supported
+BASIC_LUMP_CLASSES.pop("CM_PRIMITIVES")
+BASIC_LUMP_CLASSES.pop("TRICOLL_TRIANGLES")
+BASIC_LUMP_CLASSES, LumpClasses = x360.convert_versioned(BASIC_LUMP_CLASSES)
 # copy used LumpClasses to globals
 for LumpClass_name, LumpClass in LumpClasses.items():
     globals()[LumpClass_name] = LumpClass
@@ -52,8 +57,9 @@ SPECIAL_LUMP_CLASSES = {"ENTITIES":                 {0: shared.Entities},
                         "ENTITY_PARTITIONS":        {0: titanfall.EntityPartitions},
                         "CM_GRID":                  {0: Grid_x360},
                         "LEVEL_INFO":               {0: LevelInfo_x360},
-                        "TEXTURE_DATA_STRING_DATA": {0: shared.TextureDataStringData}}
-# TODO: big-endian versions of PakFile & PhysicsCollide
+                        "TEXTURE_DATA_STRING_DATA": {0: source.TextureDataStringData}}
+# TODO: orange_box_x360.PakFile_x360
+# TODO: orange_box_x360.PhysicsCollide_x360
 
 GAME_LUMP_HEADER = x360.make_big_endian(titanfall.GAME_LUMP_HEADER)
 
