@@ -81,8 +81,9 @@ Once you've extracted the files you need:
  * [Blender_BSP_Importer](https://github.com/QuakeTools/Blender_BSP_Importer)
    - Quake 3 `.bsp` importer
 
-
 ## FAQs
+ * No Textures / Models?
+   - I'm working on it
  * Why can't I see anything?
    - Titanfall Engine maps are huge, you need to increase your view distance
    - `3D View > N > View > Clip Start: 16, End: 102400` (only affects that 3D view)
@@ -102,14 +103,23 @@ Once you've extracted the files you need:
    - And credit Respawn too! they made the maps in the first place
 
 ### Further Questions
-I can be found on the following Titanfall related Discord Servers as `b!scuit#3659`:
-  * Titanfall 1:
-    - [TF Remnant Fleet](https://discord.gg/hKpQeJqdZR)
-  * Titanfall 2:
-    - Titanfall 2 Speedrunning Discord
-  * Apex Legends:
-    - [R5Reloaded](https://discord.com/invite/jqMkUdXrBr)
-<!-- TODO: add Titanfall Online & Titanfall 2 Custom Servers when they go public -->
 
-> NOTE: I am a fully time Uni Student in an Australian Timezone  
+> NOTE: I am a full-time Uni Student in an Australian Timezone  
 > Don't go expecting an immediate response
+
+Open a GitHub Issue with the `question` label  
+If you don't want a GitHub account I can be found on Discord as `b!scuit#3659`  
+**Send your Question in a Message Request or I'll assume you're a bot**
+
+You can also find me in these Titanfall & Apex Discords:
+  * Titanfall 1:
+    - Harmony
+  * Titanfall 2:
+    - Northstar
+    - Titanfall 2 Speedrunning
+  * Apex Legends:
+    - Legion+
+    - R5Reloaded
+<!-- TODO: add Titanfall Online Revive when they go public -->
+
+**If you join one of the above Discords just to add me, I'll assume you're a bot**
