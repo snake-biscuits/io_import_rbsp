@@ -39,8 +39,8 @@ Map files are stored in `.vpk` archives, you'll need extra tools to get them:
    - `Titanfall2/vpk/`
    - `Apex Legends/vpk/`
  * Open the **dir** vpk (`mp_whatever.bsp.pak000_dir.vpk`) for the map you want to load
-   - TODO: map name list
-   - The lobby map is stored in `mp_common.bsp.pak000_dir.vpk`
+   - You can find a list of map names for each game in the [Wiki](https://github.com/snake-biscuits/io_import_rbsp/wiki)
+   - The lobby maps are always in `mp_common.bsp.pak000_dir.vpk`
  * Extract the whole `maps/` folder to someplace you'll remember
    - for Titanfall 1 & 2 you only need the `.bsp` & `.ent` files
    - Apex Legends maps after season 11 need `.bsp_lump` files
