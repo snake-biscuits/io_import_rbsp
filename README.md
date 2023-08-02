@@ -1,39 +1,57 @@
 # io_import_rbsp
-Blender 2.93 importer for `rBSP` files (Titanfall Engine `.bsp`)
+Blender importer for Titanfall Engine map files
+<!-- TODO: .gif / video guide -->
 
 
-<!-- TODO: .gifs for guides -->
+## Download
+
+ * Get Blender:
+   - [Steam](https://store.steampowered.com/app/365670/Blender/)
+   - [Blender.org](https://www.blender.org/download/)
+ * Get the Addon:
+   - [latest release](https://github.com/snake-biscuits/io_import_rbsp/releases/)
+
+
 ## Installation
- * Get Blender 2.93+ from [Steam](https://store.steampowered.com/app/365670/Blender/) / [Blender.org](https://www.blender.org/download/)
- * Head over to [releases](https://github.com/snake-biscuits/io_import_rbsp/releases/) & download `io_import_rbsp_v1.2.0_b2.93.zip`  
-Then, in Blender:  
+
+In **Blender**:
  * `Edit > Preferences > Add-ons > Install`
- * Find `io_import_rbsp_v1.2.0_b2.93.zip`
+ * Find `io_import_rbsp_vX.Y.Z_bX.Y.zip`
+   - `vX.Y.Z` is the addon version
+   - `bX.Y` is the Blender version
  * Click `Install Addon`
  * Check the box to enable `Import-Export: io_import_rbsp`
 
 
 ## Usage
 
-> WARNING: Titanfall Engine maps are huge  
-> Imports can take multiple minutes and a few GB of RAM for the geometry alone  
+> WARNING: Imports can take multiple minutes & consume many GB of RAM
+
 > Test a small map before loading Olympus and setting your PC on fire
 
-### Extracting `.bsp`s
-You will need to extract `.bsp`, `.bsp_lump` & `.ent` files for any map you want to extract. To do this:
- * Grab a [Respawn VPK extractor](#Respawn-VPK)
+
+### Extract Maps
+
+Map files are stored in `.vpk` archives, you'll need extra tools to get them:
+ * Install [HarmonyVPKTool](https://github.com/harmonytf/HarmonyVPKTool/releases/latest) (if you haven't already)
  * Locate the `.vpk`s for the game you want to work with (game must be installed)
    - `Titanfall/vpk/`
    - `Titanfall2/vpk/`
    - `Apex Legends/vpk/`
- * Open the `*.bsp.pak000_dir.vpk` for the map you want to load
-   - Titanfall 2 map names can be found here: [NoSkill Modding Wiki](https://noskill.gitbook.io/titanfall2/documentation/file-location/vpk-file-names)
-   - Lobbies are stored in `mp_common.bsp.pak000_dir.vpk`
- * Extract the `.bsp`, `.ent`s & `.bsp_lumps` from the `maps/` folder to someplace you'll remember
-   - each `.vpk` holds assets for one `.bsp` (textures and models are stored elsewhere)
-<!-- TODO: Materials & Models -->
+ * Open the **dir** vpk (`mp_whatever.bsp.pak000_dir.vpk`) for the map you want to load
+   - TODO: map name list
+   - The lobby map is stored in `mp_common.bsp.pak000_dir.vpk`
+ * Extract the whole `maps/` folder to someplace you'll remember
+   - for Titanfall 1 & 2 you only need the `.bsp` & `.ent` files
+   - Apex Legends maps after season 11 need `.bsp_lump` files
 
-### Blender Importer
+
+<!-- TODO: Materials & Models -->
+<!-- Titanfall models/ & materials/ folder + common.vpk -->
+<!-- Need to generate an asset library for props & materials -->
+
+
+### Import Map
 Once you've extracted the files you need:
  * `File > Import > Titanfall Engine .bsp`
  * Select the `.bsp` (`.bsp_lump` & `.ent` files need to be in the same folder)
@@ -43,8 +61,11 @@ Once you've extracted the files you need:
 <!-- Cry when it breaks and send me an e-mail to fix it -->
 <!-- Materials & Models will require paths set in Preferences & SourceIO -->
 
-### Legion Assets
-**TITANFALL 2 & APEX LEGENDS ONLY! (EXPERIMENTAL)**
+### Import Materials
+> TODO
+
+### Import Models
+**(EXPERIMENTAL) TITANFALL 2 & APEX LEGENDS ONLY!**
 - Titanfall: `.vpk` Materials & Models
 - Titanfall 2: `.rpak` Materials; `.vpk` Models
 - Apex: `.rpak` Materials & Models
@@ -58,16 +79,9 @@ Once you've extracted the files you need:
 ## Related Tools
 
 ### Respawn VPK
- * [Titanfall_VPKTool3.4_Portable](https://github.com/Wanty5883/Titanfall2/blob/master/tools/Titanfall_VPKTool3.4_Portable.zip) (GUI only)
-   - by `Cra0kalo` (currently Closed Source) **recommended**
- * [TitanfallVPKTool](https://github.com/p0358/TitanfallVPKTool) (GUI & CLI)
-   - by `P0358`
- * [RSPNVPK](https://github.com/squidgyberries/RSPNVPK) (CLI only)
-   - Fork of `MrSteyk`'s Tool
- * [UnoVPKTool](https://github.com/Unordinal/UnoVPKTool) (CLI only)
-   - by `Unordinal`
+ * [HarmonyVPKTool](https://github.com/harmonytf/HarmonyVPKTool/releases/latest)
 
-### Other
+### More Blender Addons
  * [SourceIO](https://github.com/REDxEYE/SourceIO)
    - GoldSrc & Source Engine importer (`.bsp`, `.vmt`, `.vtf`, `.mdl`)
  * [SourceOps](https://github.com/bonjorno7/SourceOps)
@@ -104,22 +118,25 @@ Once you've extracted the files you need:
 
 ### Further Questions
 
-> NOTE: I am a full-time Uni Student in an Australian Timezone  
+> NOTE: I am a full-time Uni Student in an Australian Timezone
+
 > Don't go expecting an immediate response
 
-Open a GitHub Issue with the `question` label  
-If you don't want a GitHub account I can be found on Discord as `b!scuit#3659`  
+Open a GitHub Issue with the `question` label
+
+If you don't want a GitHub account I can be found on Discord as `b!scuit#3659`
+
 **Send your Question in a Message Request or I'll assume you're a bot**
 
 You can also find me in these Titanfall & Apex Discords:
   * Titanfall 1:
-    - Harmony
+    - [Harmony](https://harmony.tf/)
   * Titanfall 2:
-    - Northstar
-    - Titanfall 2 Speedrunning
+    - [Northstar](https://northstar.tf/)
+    - [Titanfall 2 Speedrunning](https://www.speedrun.com/titanfall_2)
   * Apex Legends:
-    - Legion+
-    - R5Reloaded
+    - [Legion+](https://github.com/r-ex/LegionPlus)
+    - [R5Reloaded](https://r5reloaded.com/)
 <!-- TODO: add Titanfall Online Revive when they go public -->
 
 **If you join one of the above Discords just to add me, I'll assume you're a bot**
