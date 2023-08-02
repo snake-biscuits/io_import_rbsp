@@ -18,6 +18,7 @@ def split_meshes(bsp, master_collection: bpy.types.Collection, materials: List[b
             mesh = bsp.MESHES[mesh_index]  # to look up TextureData
             # blender mesh assembly
             blender_mesh = bpy.data.meshes.new(f"mesh #{mesh_index}")  # mesh object
+            # TODO: mesh.from_pydata([vertex_positions, [], [(tri.A_index, B, C), ...]])
             blender_bmesh = bmesh.new()  # mesh data
             mesh_vertices = bsp.vertices_of_mesh(mesh_index)
             bmesh_vertices = dict()
@@ -60,4 +61,3 @@ def split_meshes(bsp, master_collection: bpy.types.Collection, materials: List[b
             model_collection.objects.link(blender_object)
         if len(model_collection.objects) == 0:
             bpy.data.collections.remove(model_collection)
-
