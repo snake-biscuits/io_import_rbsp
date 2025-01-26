@@ -81,6 +81,9 @@ Once you've extracted the files you need:
 ### Respawn VPK
  * [HarmonyVPKTool](https://github.com/harmonytf/HarmonyVPKTool/releases/latest)
 
+### Porting Tools
+ * [VRChat-Titanfall-Unity-Tools](https://github.com/Swagguy47/VRChat-Titanfall-Unity-Tools)
+
 ### More Blender Addons
  * [SourceIO](https://github.com/REDxEYE/SourceIO)
    - GoldSrc & Source Engine importer (`.bsp`, `.vmt`, `.vtf`, `.mdl`)
