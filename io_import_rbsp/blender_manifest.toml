@@ -20,8 +20,9 @@ copyright = [
    "2021 Jared Ketterer",
 ]
 
-# wheels = [
-# ]
+wheels = [
+  "./wheels/bsp_tool-0.5.0-py3-none-any.whl"
+]
 
 [permissions]
 files = "Import .bsp files"

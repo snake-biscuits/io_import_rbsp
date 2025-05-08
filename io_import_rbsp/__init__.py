@@ -3,7 +3,7 @@ from bpy_extras.io_utils import ImportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Operator
 
-from . import bsp_tool
+import bsp_tool
 from . import rbsp
 from . import preferences
 
