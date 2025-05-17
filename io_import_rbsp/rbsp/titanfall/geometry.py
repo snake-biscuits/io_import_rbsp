@@ -1,65 +1,68 @@
+import itertools
 from typing import List
 
 import bmesh
 import bpy
-
 from bpy.types import Collection, Material
 
+from bsp_tool.utils.geometry import triangle_soup
 
-def split_meshes(bsp, bsp_collection: Collection, materials: List[Material]):
+from .entities import name_of
+
+
+def blender_uv(u, v):
+    return (u, 1 - v)
+
+
+def all_models(bsp, bsp_collection: Collection, materials: List[Material]):
     geometry_collection = bpy.data.collections.new("geometry")
     bsp_collection.children.link(geometry_collection)
-    # load_model
-    # TODO: create sub-collections for `model #0`
-    # -- mesh.flags: skybox & transparent
-    for model_index, model in enumerate(bsp.MODELS):
-        model_collection = bpy.data.collections.new(f"model #{model_index}")
-        geometry_collection.children.link(model_collection)
-        # load_mesh
-        for mesh_index in range(model.first_mesh, model.first_mesh + model.num_meshes):
-            mesh = bsp.MESHES[mesh_index]  # to look up TextureData
-            # blender mesh assembly
-            blender_mesh = bpy.data.meshes.new(f"mesh #{mesh_index}")  # mesh object
-            # TODO: mesh.from_pydata([vertex_positions, [], [(tri.A_index, B, C), ...]])
-            blender_bmesh = bmesh.new()  # mesh data
-            mesh_vertices = bsp.vertices_of_mesh(mesh_index)
-            bmesh_vertices = dict()
-            # ^ {bsp_vertex.position_index: BMVert}
-            face_uvs = list()
-            # ^ [{vertex_position_index: (u, v)}]
-            for triangle_index in range(0, len(mesh_vertices), 3):
-                face_indices = list()
-                uvs = dict()
-                for vert_index in reversed(range(3)):  # inverted winding order
-                    bsp_vertex = mesh_vertices[triangle_index + vert_index]
-                    vertex = bsp.VERTICES[bsp_vertex.position_index]
-                    if bsp_vertex.position_index not in bmesh_vertices:
-                        bmesh_vertices[bsp_vertex.position_index] = blender_bmesh.verts.new(vertex)
-                    face_indices.append(bsp_vertex.position_index)
-                    uvs[tuple(vertex)] = (bsp_vertex.uv0.u, -bsp_vertex.uv0.v)  # inverted V-axis
-                try:
-                    blender_bmesh.faces.new([bmesh_vertices[vpi] for vpi in face_indices])
-                    face_uvs.append(uvs)
-                # HACKY BUGFIX
-                except ValueError:
-                    pass  # "face already exists", idk why this happens
-            del bmesh_vertices
-            # apply uv
-            uv_layer = blender_bmesh.loops.layers.uv.new()
-            blender_bmesh.faces.ensure_lookup_table()
-            for face, uv_dict in zip(blender_bmesh.faces, face_uvs):
-                for loop in face.loops:  # loops correspond to verts
-                    loop[uv_layer].uv = uv_dict[tuple(loop.vert.co)]
-            blender_bmesh.to_mesh(blender_mesh)
-            blender_bmesh.free()
-            texture_data = bsp.TEXTURE_DATA[bsp.MATERIAL_SORT[mesh.material_sort].texture_data]
-            blender_mesh.materials.append(materials[texture_data.name_index])
-            blender_mesh.update()
-            blender_object = bpy.data.objects.new(blender_mesh.name, blender_mesh)
-            # TODO: use smooth shading (bpy.ops.object.shade_smooth() ? needs selection)
-            blender_object.data.use_auto_smooth()
-            # TODO: add to a sub-collection depending on TextureData/Mesh.flags
-            # -- SKYBOX / TRANSLUCENT (decal patches & atmospheric effects)
-            model_collection.objects.link(blender_object)
-        if len(model_collection.objects) == 0:
-            bpy.data.collections.remove(model_collection)
+    # TODO: split skybox off from worldspawn
+    for i, model in enumerate(bsp.MODELS):
+        model = bsp.model(i)
+        vertices = [
+            vertex
+            for mesh in model
+            for polygon in mesh
+            for vertex in polygon]
+        indices = list(reversed(triangle_soup(vertices)))  # invert winding
+        # TODO: map index ranges for each material
+
+        mesh = bpy.data.meshes.new(name_of(model.entity))
+        mesh.from_pydata([
+            [vertex.position for vertex in vertices],
+            list(),  # auto-generate edges
+            indices])
+
+        # NOTE: these next bits might break
+        # -- commenting them out for now
+
+        # bmesh_ = bmesh.new()  # mesh data
+        # base_uv = bmesh_.loops.layers.uv.new("base")
+        # base_uv.uv.foreach_set("vector", itertools.chain(*[
+        #     blender_uv(*vertices[index].uv0)
+        #     for index in indices]))
+
+        # lightmap_uv = bmesh_.loops.layers.uv.new("lightmap")
+        # lightmap_uv.uv.foreach_set("vector", itertools.chain(*[
+        #     blender_uv(*vertices[index].uv1)
+        #     for index in indices]))
+        # bmesh_.to_mesh(mesh)
+        # bmesh_.free()
+
+        # vertex_colour = bmesh_.color_attributes.new("Colour")
+        # vertex_colour.foreach_set("color", itertools.chain(*[
+        #     vertices[index].colour
+        #     for index in indices]))
+
+        # # TODO: assign materials
+        # for material in {sub_mesh.material for sub_mesh in model.meshes}:
+        #     mesh.materials.append(materials[material.name])
+        # mesh.update()
+
+        blender_mesh = bpy.data.objects.new(mesh.name, mesh)
+        blender_mesh.location = model.origin
+        # TODO: model angles?
+        # TODO: try to get smooth shading from vertex normals instead
+        blender_mesh.data.use_auto_smooth()
+        blender_mesh.link(geometry_collection)
