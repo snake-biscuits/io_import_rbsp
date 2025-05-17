@@ -1,3 +1,6 @@
+# Blender extension build
+io_import_rbsp-*.zip
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
