@@ -3,10 +3,12 @@ from typing import List
 import bmesh
 import bpy
 
+from bpy.types import Collection, Material
 
-def split_meshes(bsp, master_collection: bpy.types.Collection, materials: List[bpy.types.Material]):
+
+def split_meshes(bsp, bsp_collection: Collection, materials: List[Material]):
     geometry_collection = bpy.data.collections.new("geometry")
-    master_collection.children.link(geometry_collection)
+    bsp_collection.children.link(geometry_collection)
     # load_model
     # TODO: create sub-collections for `model #0`
     # -- mesh.flags: skybox & transparent

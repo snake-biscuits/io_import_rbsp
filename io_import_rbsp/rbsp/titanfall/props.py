@@ -4,16 +4,18 @@ import addon_utils
 import bpy
 import mathutils
 
+from bpy.types import Collection
+
 
 # TODO: break down model paths as collections
 # foliage > ...
 # auto-hide large collections (> 1000 props)
 
 
-def as_empties(bsp, master_collection: bpy.types.Collection):
+def as_empties(bsp, bsp_collection: Collection):
     """Requires all models to be extracted beforehand"""
     prop_collection = bpy.data.collections.new("static props")
-    master_collection.children.link(prop_collection)
+    bsp_collection.children.link(prop_collection)
     for prop in bsp.GAME_LUMP.sprp.props:
         prop_object = bpy.data.objects.new(bsp.GAME_LUMP.sprp.model_names[prop.model_name], None)
         # TODO: link mesh data by model_name
@@ -24,10 +26,10 @@ def as_empties(bsp, master_collection: bpy.types.Collection):
         prop_collection.objects.link(prop_object)
 
 
-def all_models(bsp, master_collection: bpy.types.Collection):
+def all_models(bsp, bsp_collection: Collection):
     # NOTE: runs post entities, so we should mutate the existing empties (if loaded...)
     raise NotImplementedError()
-    static_props(bsp, master_collection)  # <- creates prop collection
+    static_props(bsp, bsp_collection)  # <- creates prop collection
     # TODO: non-static prop entities:
     # -- prop_control_panel
     # -- prop_dynamic
@@ -50,7 +52,7 @@ def all_models(bsp, master_collection: bpy.types.Collection):
     # TODO: instance each prop at listed location & rotation etc. (preserve object data)
 
 
-def static_props(bsp, master_collection: bpy.types.Collection):
+def static_props(bsp, bsp_collection: Collection):
     """https://github.com/llennoco22/Apex-mprt-importer-for-Blender/blob/main/ApexMapImporter/panel_op.py"""
     dependencies = {"SourceIO": "https://github.com/REDxEYE/SourceIO/releases"}
     addons = [m.__name__ for m in addon_utils.modules()]

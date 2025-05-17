@@ -3,10 +3,10 @@ from bpy.props import StringProperty
 
 
 class Preferences(bpy.types.PropertyGroup):
-    materials_folder: StringProperty(name="Materials folder",  # noqa F722
-                                     subtype="DIR_PATH")  # noqa F722
-    models_folder: StringProperty(name="Models folder",  # noqa F722
-                                  subtype="DIR_PATH")  # noqa F722
+    materials_folder: StringProperty(
+        name="Materials folder", subtype="DIR_PATH")  # noqa 722
+    models_folder: StringProperty(
+        name="Models folder", subtype="DIR_PATH")  # noqa F722
 
 
 class SCENE_PT_LegionFolder(bpy.types.Panel):
