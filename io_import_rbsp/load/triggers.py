@@ -7,9 +7,9 @@ import bpy
 from bpy.types import Mesh
 import mathutils
 
-from ..utils import change_collection
 from .entities import Entity
 from .entities import editorclass_of, name_of, set_location
+from .utils import change_collection
 
 
 purple = (0.527, 0.006, 1.000)
@@ -81,8 +81,9 @@ def all_triggers(bsp):
 
 
 def trigger_brushes(entity: Entity, palette=trigger_colours) -> Mesh:
-    if "*trigger_brush_mins" in entity:  # quick fix for Apex brush entities
-        return None  # false positive, no mesh data
+    if "*trigger_brush_mins" in entity:  # Apex brush entity (starcoll)
+        # TODO: move to a starcoll parser
+        return None  # skip
     # get brush planes
     pattern_plane_key = re.compile(r"\*trigger_brush_([0-9]+)_plane_([0-9]+)")
     brushes = collections.defaultdict(lambda: collections.defaultdict(list))
@@ -110,7 +111,7 @@ def trigger_brushes(entity: Entity, palette=trigger_colours) -> Mesh:
             local_y = mathutils.Vector.cross(non_parallel, normal).normalized()
             local_x = mathutils.Vector.cross(local_y, normal).normalized()
             center = normal * distance
-            radius = 10 ** 6  # may encounter issues if brush is larger than this
+            radius = 10 ** 7
             polygon = [
                 center + ((-local_x + local_y) * radius),
                 center + ((local_x + local_y) * radius),

@@ -5,7 +5,7 @@ import bpy
 from bpy.types import PointLight
 import mathutils
 
-from ..utils import change_collection
+from .utils import change_collection
 
 
 Entity = Dict[str, str]

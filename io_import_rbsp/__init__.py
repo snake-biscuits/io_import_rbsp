@@ -5,7 +5,7 @@ from bpy.types import Operator
 
 import bsp_tool
 
-from . import rbsp
+from . import load
 from . import preferences
 
 
@@ -28,19 +28,17 @@ class ImportRBSP(Operator, ImportHelper):
     filename_ext = ".bsp"
     filter_glob: StringProperty(
         default="*.bsp", options={"HIDDEN"}, maxlen=255)  # noqa F722
-
-    # TODO: load_materials EnumProperty: None, Names, Base Colours, Nodes
-    # TODO: load_lighting EnumProperty: None, Empties, All, PortalLights
-    # TODO: Lightmaps
-    # -- export files and add to materials
-    # -- would require splitting materials up more
-
+    # importer settings
     load_geometry: BoolProperty(
         name="Geometry", description="Load geometry", default=True)  # noqa F722
     load_triggers: BoolProperty(
         name="Triggers", description="Load triggers", default=True)  # noqa F722
     load_entities: BoolProperty(
         name="Entities", description="Load entities", default=True)  # noqa F722
+    # TODO: separate entities into more sub-categories
+    # -- lights
+    # -- sound
+    # -- cameras
     load_props: EnumProperty(
         name="Props", description="Load smaller models",  # noqa F722
         items=(
@@ -53,17 +51,15 @@ class ImportRBSP(Operator, ImportHelper):
         default="None")  # noqa F722
 
     # TODO: loading % indicators
+    # TODO: error handling
     def execute(self, context):
-        """Import selected .bsp"""
         bsp = bsp_tool.load_bsp(self.filepath)
-        load_modules = {
-            bsp_tool.branches.respawn.titanfall: rbsp.titanfall,
-            bsp_tool.branches.respawn.titanfall2: rbsp.titanfall2,
-            bsp_tool.branches.respawn.apex_legends: rbsp.apex_legends,
-            bsp_tool.branches.respawn.apex_legends50: rbsp.apex_legends,
-            bsp_tool.branches.respawn.apex_legends51: rbsp.apex_legends,
-            bsp_tool.branches.respawn.apex_legends52: rbsp.apex_legends}
-        load = load_modules[bsp.branch]
+        if not is_titanfall_engine(bsp):
+            self.report(
+                {"ERROR_INVALID_INPUT"},
+                "Not a Titanfall Engine .bsp!")
+            return {"CANCELLED"}
+        # TODO: self.report({"INFO"}, <timestamps>)
         # bsp_collection
         if bsp.filename not in bpy.data.collections:
             bsp_collection = bpy.data.collections.new(bsp.filename)
@@ -71,9 +67,11 @@ class ImportRBSP(Operator, ImportHelper):
         else:
             bsp_collection = bpy.data.collections[bsp.filename]
         # load based on chosen options
-        materials = load.materials.base_colours(bsp)
+        # TODO: pre-check extracted assets folders in prefs
+        # -- can do a bunch of skips if they're empty
         if self.load_geometry:
-            load.geometry.all_models(bsp, bsp_collection, materials)
+            # NOTE: also loads materials
+            load.geometry.all_models(bsp, bsp_collection)
         if self.load_triggers or self.load_entities:
             make_entities_collection()
             if self.load_triggers:
@@ -87,7 +85,20 @@ class ImportRBSP(Operator, ImportHelper):
             load.props.static_props(bsp, bsp_collection)
         # TODO: scale the whole import (Engine Units -> Inches)
         # TODO: override default view clipping (16 near, 102400 far)
+        del bsp  # don't cache!
         return {"FINISHED"}
+
+
+def is_titanfall_engine(bsp) -> bool:
+    valid_bspclass = isinstance(bsp, bsp_tool.RespawnBsp)
+    valid_branch = bsp.branch in (
+        bsp_tool.branches.respawn.titanfall,
+        bsp_tool.branches.respawn.titanfall2,
+        bsp_tool.branches.respawn.apex_legends,
+        bsp_tool.branches.respawn.apex_legends50,
+        bsp_tool.branches.respawn.apex_legends51,
+        bsp_tool.branches.respawn.apex_legends52)
+    return valid_bspclass and valid_branch
 
 
 def make_entities_collection(bsp_collection):
@@ -106,7 +117,7 @@ def menu_func_import(self, context):
 
 def register():
     preferences.register()
-    bpy.utils.register_submodule_factory(__name__, ("bsp_tool", "rbsp"))
+    bpy.utils.register_submodule_factory(__name__, ("bsp_tool", "load"))
     bpy.utils.register_class(ImportRBSP)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
 

@@ -1,9 +1,9 @@
-import itertools
-from typing import List
+# import itertools
 
-import bmesh
+# import bmesh
 import bpy
-from bpy.types import Collection, Material
+from bpy.types import Collection
+# TODO: see if numpy can speed things up a little
 
 from bsp_tool.utils.geometry import triangle_soup
 
@@ -14,10 +14,12 @@ def blender_uv(u, v):
     return (u, 1 - v)
 
 
-def all_models(bsp, bsp_collection: Collection, materials: List[Material]):
+def all_models(bsp, bsp_collection: Collection):
     geometry_collection = bpy.data.collections.new("geometry")
     bsp_collection.children.link(geometry_collection)
-    # TODO: split skybox off from worldspawn
+    # TODO: sort sub-meshes by material (see bsp_tool.scene)
+    # -- combine if same material
+    # -- separate skybox from worldspawn
     for i, model in enumerate(bsp.MODELS):
         model = bsp.model(i)
         vertices = [
@@ -57,7 +59,8 @@ def all_models(bsp, bsp_collection: Collection, materials: List[Material]):
 
         # # TODO: assign materials
         # for material in {sub_mesh.material for sub_mesh in model.meshes}:
-        #     mesh.materials.append(materials[material.name])
+        #     blender_material = load.materials.make_material(material.name)
+        #     mesh.materials.append(blender_material)
         # mesh.update()
 
         blender_mesh = bpy.data.objects.new(mesh.name, mesh)
