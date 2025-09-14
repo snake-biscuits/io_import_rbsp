@@ -3,8 +3,8 @@ from bpy.props import StringProperty
 
 
 class Preferences(bpy.types.PropertyGroup):
-    rsx_folder: StringProperty(
-        name="RSX folder", subtype="DIR_PATH")  # noqa 722
+    assets_folder: StringProperty(
+        name="Assets folder", subtype="DIR_PATH")  # noqa 722
     # TODO: per-game extracted vpk assets folder (r1 & r2)
     # TODO: game folders for automated extraction
 
@@ -19,29 +19,31 @@ class Preferences(bpy.types.PropertyGroup):
     # -- can't do that without decoupling materials from .all_geometry
 
 
-class SCENE_PT_LegionFolder(bpy.types.Panel):
+class SCENE_PT_ReSourceAssetFolders(bpy.types.Panel):
     """Creates a Panel in the scene context of the properties editor"""
     bl_label = "Titanfall Engine Assets"
-    bl_idname = "SCENE_PT_LegionFolder"
+    bl_idname = "SCENE_PT_ReSourceAssetFolders"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(context.scene.rbsp_prefs, "rsx_folder")
+        layout.prop(context.scene.rbsp_prefs, "assets_folder")
 
 
-classes = (Preferences, SCENE_PT_LegionFolder)
+classes = (
+    Preferences,
+    SCENE_PT_ReSourceAssetFolders)
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    for class_ in classes:
+        bpy.utils.register_class(class_)
     bpy.types.Scene.rbsp_prefs = bpy.props.PointerProperty(type=Preferences)
 
 
 def unregister():
-    for c in classes:
-        bpy.utils.unregister_class(c)
+    for class_ in classes:
+        bpy.utils.unregister_class(class_)
     del bpy.types.Scene.rbsp_prefs

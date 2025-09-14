@@ -138,11 +138,11 @@ class MaterialFormat:
 # TODO: guide users on what RSX settings to use when exporting
 class Matl(MaterialFormat):
     """Titanfall 2 & Apex Legends .rpak material"""
-    assets_folder = bpy.context.scene.rbsp_prefs.rsx_folder
+    assets_folder = bpy.context.scene.rbsp_prefs.assets_folder
     # TODO: confirm the assets folder is real
-    # NOTE: assets_folder should contain rsx.exe
-    # -- we go down into exported_files/
-    # -- could potentially run rsx w/ some command line args in future
+    # TODO: find & call rsx.exe
+    # -- go down into exported_files/
+    # -- could potentially run w/ some command line args
 
     @classmethod
     def load_texture(cls, texture_path: str) -> ImageTexture:
@@ -218,7 +218,7 @@ class Vmt:
     def from_material(cls, material) -> Vmt:
         out = cls()
         raise NotImplementedError()
-        # TODO: parse .vmt (see MRVN-VMT)
+        # TODO: parse .vmt (w/ `bite`)
         # -- shader type
         vtfs: Dict[Slot, str] = ...
         out.textures = {

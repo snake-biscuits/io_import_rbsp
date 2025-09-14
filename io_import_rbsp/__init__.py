@@ -63,7 +63,7 @@ class ImportRBSP(Operator, ImportHelper):
         # bsp_collection
         if bsp.filename not in bpy.data.collections:
             bsp_collection = bpy.data.collections.new(bsp.filename)
-            bpy.context.scene.collection.children.link(bsp_collection)
+            context.scene.collection.children.link(bsp_collection)
         else:
             bsp_collection = bpy.data.collections[bsp.filename]
         # load based on chosen options
@@ -71,6 +71,7 @@ class ImportRBSP(Operator, ImportHelper):
         # -- can do a bunch of skips if they're empty
         if self.load_geometry:
             # NOTE: also loads materials
+            # TODO: pass down preferences for asset folders
             load.geometry.all_models(bsp, bsp_collection)
         if self.load_triggers or self.load_entities:
             make_entities_collection()
@@ -82,6 +83,7 @@ class ImportRBSP(Operator, ImportHelper):
         if self.load_props == "Empties":
             load.props.as_empties(bsp, bsp_collection)
         elif self.load_props == "Instances":
+            # TODO: pass down preferences for asset folders
             load.props.static_props(bsp, bsp_collection)
         # TODO: scale the whole import (Engine Units -> Inches)
         # TODO: override default view clipping (16 near, 102400 far)
