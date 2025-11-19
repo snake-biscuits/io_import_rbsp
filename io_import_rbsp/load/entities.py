@@ -13,7 +13,7 @@ Entity = Dict[str, str]
 
 
 def editorclass_of(entity: Entity) -> str:
-    return entity.get("editorclass", entity["classname"])
+    return entity.get("editorclass", entity.get("classname", None))
 
 
 def name_of(entity: Entity) -> str:
