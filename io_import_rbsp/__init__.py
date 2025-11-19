@@ -71,10 +71,10 @@ class ImportRBSP(Operator, ImportHelper):
         # -- can do a bunch of skips if they're empty
         if self.load_geometry:
             # NOTE: also loads materials
-            # TODO: pass down preferences for asset folders
             load.geometry.all_models(bsp, bsp_collection)
         if self.load_triggers or self.load_entities:
-            make_entities_collection()
+            make_entities_collection(bsp_collection)
+            # NOTE: collections are looked up by name, sketchy!
             if self.load_triggers:
                 load.triggers.all_triggers(bsp)
             if self.load_entities:
