@@ -40,7 +40,9 @@ class Slot(enum.Enum):
     # -- CAVITY
     # -- GLOSS
     # -- OPACITY
-    # -- duplicates for blendmodulate
+    # -- DETAIL_NORMAL
+    # -- LAYER_BLEND (_BM)
+    # -- duplicates for blendmodulate (col, nml, gls, spc)
 
 
 def make_material(material_name, palette=tool_colours) -> Material:
