@@ -1,10 +1,10 @@
 import itertools
 
-# import bmesh
 import bpy
 from bpy.types import Collection
 # TODO: see if numpy can speed things up a little
 
+from .materials import make_material
 from .entities import name_of
 
 
@@ -20,11 +20,11 @@ def all_models(bsp, bsp_collection: Collection):
     # -- separate skybox from worldspawn
     for i, model in enumerate(bsp.MODELS):
         model = bsp.model(i)
-        vertices = [
-            vertex
+        vertices, materials = zip(*[
+            (vertex, mesh.material)
             for mesh in model.meshes
             for polygon in mesh.polygons
-            for vertex in polygon.vertices]
+            for vertex in polygon.vertices])
         assert len(vertices) % 3 == 0, "not a triangle soup"
         indices = list(itertools.chain([
             (i + 2, i + 1, i + 0)
@@ -42,35 +42,56 @@ def all_models(bsp, bsp_collection: Collection):
         mesh.from_pydata(
             [vertex.position for vertex in vertices],
             list(),  # auto-generate edges
-            indices)
+            indices,
+            shade_flat=False)
 
-        # NOTE: these next bits might break
-        # -- commenting them out for now
+        base_uv = mesh.uv_layers.new(name="base")
+        base_uv.data.foreach_set(
+            "uv",
+            list(itertools.chain(*[
+                blender_uv(*vertices[index].uv0)
+                for tri in indices
+                for index in tri])))
 
-        # bmesh_ = bmesh.new()  # mesh data
-        # base_uv = bmesh_.loops.layers.uv.new("base")
-        # base_uv.uv.foreach_set("vector", itertools.chain(*[
-        #     blender_uv(*vertices[index].uv0)
-        #     for index in indices]))
+        lightmap_uv = mesh.uv_layers.new(name="lightmap")
+        lightmap_uv.data.foreach_set(
+            "uv",
+            list(itertools.chain(*[
+                blender_uv(*vertices[index].uv1) if len(vertices[index].uv) >= 2 else (0, 0)
+                for tri in indices
+                for index in tri])))
 
-        # lightmap_uv = bmesh_.loops.layers.uv.new("lightmap")
-        # lightmap_uv.uv.foreach_set("vector", itertools.chain(*[
-        #     blender_uv(*vertices[index].uv1)
-        #     for index in indices]))
-        # bmesh_.to_mesh(mesh)
-        # bmesh_.free()
+        vertex_colour = mesh.vertex_colors.new(name="Colour")
+        vertex_colour.data.foreach_set(
+            "color",
+            list(itertools.chain(*[
+                vertices[index].colour
+                for tri in indices
+                for index in tri])))
 
-        # vertex_colour = bmesh_.color_attributes.new("Colour")
-        # vertex_colour.foreach_set("color", itertools.chain(*[
-        #     vertices[index].colour
-        #     for index in indices]))
+        material_indices = dict()
+        for material in {sub_mesh.material for sub_mesh in model.meshes}:
+            blender_material = make_material(material.name)
+            mesh.materials.append(blender_material)
+            material_indices[material.name] = len(mesh.materials) - 1
 
-        # # TODO: assign materials
-        # for material in {sub_mesh.material for sub_mesh in model.meshes}:
-        #     blender_material = load.materials.make_material(material.name)
-        #     mesh.materials.append(blender_material)
-        # mesh.update()
+        # assign materials
+        mesh.polygons.foreach_set(
+            "material_index", [
+                material_indices[materials[tri[0]].name]
+                for tri in indices])
 
+        # TODO: per-face lightmap index
+        # NOTE: bsp_tool doesn't give us this info atm
+        # lightmap_index = mesh.attributes.new(
+        #     name="Lightmap Index", type="INT", domain="FACE")
+        # lightmap_index.data.foreach_set(
+        #     "value",
+        #     ...)
+
+        mesh.update()
+
+        # create object and place in geometry collection
         blender_mesh = bpy.data.objects.new(mesh.name, mesh)
         blender_mesh.location = model.origin
         # TODO: model angles?

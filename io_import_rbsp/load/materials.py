@@ -52,12 +52,12 @@ def make_material(material_name, palette=tool_colours) -> Material:
         material_name, (0.8, 0.8, 0.8, 1.0))
     if material_name.startswith("world/atmosphere"):
         alpha = 0.25
-    # apply
+    # set colour & alpha
     if alpha != 1:
         material.blend_method = "BLEND"
     material.diffuse_color = (*colour, alpha)
-    # full nodes
-    make_nodes(material)
+    # make_nodes(material)
+    return material
 
 
 def make_nodes(material: Material):
