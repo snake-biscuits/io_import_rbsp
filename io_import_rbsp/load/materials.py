@@ -10,6 +10,11 @@ from bpy.types import ImageTexture, Material, Node
 import numpy as np
 
 
+# TODO:
+# -- don't load textures more than once each
+# -- store metadata in material custom properties
+
+
 tool_colours = {
     "tools/toolsblack": (0, 0, 0, 1),
     "tools/toolsblockbullets": (0.914, 0.204, 0.0, .25),
@@ -28,70 +33,95 @@ tool_colours = {
     "tools/toolstrigger_capturepoint": (0.273, 0.104, 0.409, .25)}
 
 
-# TODO: values should line up with matl "$textures" keys
+# NOTE: entries marked w/ "*" aren't implemented
 class Slot(enum.Enum):
+    """wld matl texture slots"""
     ALBEDO = 0
     NORMAL = 1
     GLOSS = 2
     SPECULAR = 3
     ILLUMINATION = 4
-    CAVITY = 12
+    AMBIENT_OCCLUSION = 11  # *
+    CAVITY = 12  # *
+    OPACITY_MULTIPLY = 13  # *
+    DETAIL_ALBEDO = 14  # *
     DETAIL_NORMAL = 15
-    BLEND = 22  # BlendModulate / LayerBlend
+    UV_DISTORTION = 18  # *
+    UV_DISTORTION_2 = 19  # *
+    BLEND = 22
     ALBEDO_2 = 23
     NORMAL_2 = 24
     GLOSS_2 = 25
     SPECULAR_2 = 26
-    # TODO:
-    # -- OPACITY
+    # TODO: OPACITY (value unknown)
 
 
-class Translator:
+# TODO: shaderset -> preset (_bm_wld) etc.
+# -- base shader node type
+class NodeMaker:
     material: Material
     textures: Dict[Slot, str]
 
     def __init__(self):
         self.textures = dict()
 
-    def add_albedo(self, texture, shader_node):
-        texture_node = self.add_texture(texture, "Albedo")
-        texture_node.location.x -= texture_node.width * 1.5
-        texture_node.location.y += texture_node.height * 3
-        self.link_nodes(texture_node, "Color", shader_node, "Base Color")
-        self.link_nodes(texture_node, "Alpha", shader_node, "Alpha")
+    def add_albedo(self, texture, shader):
+        texture_node = self.add_texture(texture, "Albedo", True)
+        self.link_nodes(texture_node, "Color", shader, "Base Color")
+        self.link_nodes(texture_node, "Alpha", shader, "Alpha")
+        return texture_node
 
-    def add_blend(self, texture, mix_node):
-        raise NotImplementedError()
+    def add_blend(self, texture, mix_shader):
+        # TODO: frame
+        vertex_colour = self.add_node("ShaderNodeVertexColor")
+        texture_node = self.add_texture(texture, "Blend Mask")
+        math_node = self.add_node("ShaderNodeMath")
+        math_node.operation = "SUBTRACT"
+        math_node.use_clamp = True
+        self.link_nodes(vertex_colour, "Alpha", math_node, 0)
+        self.link_nodes(texture_node, "Color", math_node, 1)
+        self.link_nodes(math_node, 0, mix_shader, 0)
 
-    def add_cavity(self, texture, shader_node):
-        raise NotImplementedError()
+    def add_cavity(self, texture, shader):
+        raise NotImplementedError(
+            f"{self.material.name} has a cavity map")
+        # TODO: which slot? use as a bump map?
+        # -- can you have normal & cavity maps in the same material?
 
-    def add_detail_node(self, texture, output_node):
-        raise NotImplementedError()
+    def add_gloss(self, texture, shader):
+        texture_node = self.add_texture(texture, "Gloss", True)
+        self.link_nodes(texture_node, "Color", shader, "Specular Tint")
 
-    def add_gloss(self, texture, shader_node):
-        raise NotImplementedError()
+    def add_illumination(self, texture, shader):
+        texture_node = self.add_texture(texture, "Illumination", True)
+        self.link_nodes(texture_node, "Color", shader, "Emission Color")
+        self.link_nodes(texture_node, "Alpha", shader, "Emission Strength")
 
-    def add_normal(self, texture, shader_node):
+    def add_node(self, name):
+        return self.material.node_tree.nodes.new(name)
+
+    def add_normal(self, texture):
+        """assumes blue normal"""
         texture_node = self.add_texture(texture, "Normal Map")
-        texture_node.image.colorspace_settings.name = "Non-Color"
-        texture_node.location.x -= texture_node.width * 1.5
-        texture_node.location.y += texture_node.height
-        # Normal Map node
-        normal_map_node = self.material.node_tree.nodes.new("ShaderNodeNormalMap")
-        normal_map_node.location.x -= normal_map_node.width * 1.5
-        normal_map_node.location.y += normal_map_node.height
-        self.link_nodes(texture_node, "Color", normal_map_node, "Color")
-        self.link_nodes(normal_map_node, "Normal", shader_node, "Normal")
+        map_node = self.add_node("ShaderNodeNormalMap")
+        self.link_nodes(texture_node, "Color", map_node, "Color")
+        return map_node  # link to Shader.Normal / MaterialOutput.Displacement
 
-    def add_specular(self, texture, shader_node):
-        raise NotImplementedError()
+    def add_opacity(self, texture, shader):
+        texture_node = self.add_texture(texture, "Opacity")
+        self.link_nodes(texture_node, "Color", shader, "Alpha")
+        self.material.blend_method = "BLEND"
 
-    # TODO: colour space & position
-    def add_texture(self, texture, label="") -> Node:
+    def add_specular(self, texture, shader):
+        texture_node = self.add_texture(texture, "Specular", True)
+        self.link_nodes(texture_node, "Color", shader, "Diffuse Roughness")
+
+    def add_texture(self, texture, label="", albedo=False) -> Node:
         """basic texture node"""
-        node = self.material.node_tree.nodes.new("ShaderNodeTexImage")
+        node = self.add_node("ShaderNodeTexImage")
         node.image = texture
+        colourspace = "sRGB" if albedo else "Non-Color"
+        node.image.colorspace_settings.name = colourspace
         node.label = label
         return node
 
@@ -100,38 +130,85 @@ class Translator:
             out_node.outputs[out_slot],
             in_node.inputs[in_slot])
 
-    # TODO: shaderset -> preset (_bm_wld) etc.
-    # -- shader node type
-    # -- material type (blendmodulate etc.)
-    # TODO: avoid duplicate texture loads
+    def setup_shader_a(self):
+        shader_a = self.material.node_tree.nodes["Principled BSDF"]
+        frame_a = self.add_node("NodeFrame")
+        frame_a.label = "Shader A"
+        frame_a.use_custom_color = True
+        frame_a.color = (0.85, 0.65, 0.25)
+        frame_a.location = (-880, 460)
+        shader_a.parent = frame_a
+        return shader_a, frame_a
+
+    def setup_shader_b(self):
+        shader_b = self.add_node("ShaderNodeBsdfPrincipled")
+        frame_b = self.add_node("NodeFrame")
+        frame_b.label = "Shader B"
+        frame_b.use_custom_color = True
+        frame_b.color = (0.15, 0.70, 0.40)
+        frame_b.location = (-880, 460)
+        shader_b.parent = frame_b
+        return shader_b, frame_b
+
+    def setup_mix_shader(self, shader_a, shader_b):
+        mix_shader = self.add_node("ShaderNodeMixShader")
+        mix_shader.location = (1000, 50)
+        self.link_nodes(shader_a, 0, mix_shader, 1)
+        self.link_nodes(shader_b, 0, mix_shader, 2)
+        output = self.material.node_tree.nodes["Material Output"]
+        output.location = (1300, 100)
+        self.link_nodes(mix_shader, 0, output, "Surface")
+
     def make_nodes(self):
         self.material.use_nodes = True
-        shader_a = self.material.node_tree.nodes["Principled BSDF"]
+        shader_a, frame_a = self.setup_shader_a()
         if Slot.BLEND in self.textures:  # _bm_wld
-            shader_b = self.material.node_tree.nodes["Principled BSDF"]
-            # TODO: mix shader
-        # TODO: output node
+            shader_b, frame_b = self.setup_shader_b()
+            self.setup_mix_shader(shader_a, shader_b)
         # textures
         for slot, texture in self.textures.items():
             if slot == Slot.ALBEDO:
                 self.add_albedo(texture, shader_a)
             elif slot == Slot.ALBEDO_2:
                 self.add_albedo(texture, shader_b)
+            elif slot == Slot.SPECULAR:
+                self.add_specular(texture, shader_a)
+            elif slot == Slot.SPECULAR_2:
+                self.add_specular(texture, shader_b)
+            elif slot == Slot.GLOSS:
+                self.add_gloss(texture, shader_a)
+            elif slot == Slot.GLOSS_2:
+                self.add_gloss(texture, shader_b)
             elif slot == Slot.NORMAL:
-                self.add_normal(texture, shader_a)
+                map_node = self.add_normal(texture)
+                self.link_nodes(map_node, "Normal", shader_a, "Normal")
             elif slot == Slot.NORMAL_2:
-                self.add_normal(texture, shader_b)
+                map_node = self.add_normal(texture)
+                self.link_nodes(map_node, "Normal", shader_b, "Normal")
+            elif slot == Slot.DETAIL_NORMAL:
+                map_node = self.add_normal(texture)
+                output = self.material.node_tree.nodes["Material Output"]
+                self.link_nodes(map_node, "Normal", output, "Displacement")
+            elif slot == Slot.ILLUMINATION:
+                self.add_illumination(texture, shader_a)
+            # NOTE: ignoring all other texture slots
+            # elif slot == Slot.OPACITY:  # unknown value
+            #     self.add_opacity(texture, shader_a)
+            # elif slot == Slot.CAVITY:
+            #     self.add_cavity(texture, shader_a)
+            # else:
+            #     raise NotImplementedError(
+            #         f"slot={slot!r}, material={self.material.name!r}")
+        # TODO: organisation pass (set node locations)
 
     @classmethod
     def material_from_name(cls, name: str, palette=tool_colours):
-        out = cls()
-        out.material = bpy.data.materials.new(name)
-
-        if name in bpy.data.materials:  # already constructed
-            return bpy.data.materials[name]
+        folder, filename = os.path.split(name)
+        if filename in bpy.data.materials:  # already constructed
+            return bpy.data.materials[filename]
 
         out = cls()
-        out.material = bpy.data.materials.new(name)
+        out.material = bpy.data.materials.new(filename)
         # viewport colour & alpha from name
         *colour, alpha = palette.get(
             name, (0.8, 0.8, 0.8, 1.0))
@@ -142,18 +219,26 @@ class Translator:
             out.material.blend_method = "BLEND"
         out.material.diffuse_color = (*colour, alpha)
 
-        # TODO: find .vmt / .json for material
-        # name + .vmt for r1 (VMT)
-        # name + _wld.json for r2 (MATL)
-        # NOTE: must be a case-insensitive match
-
-        # if file_found:
+        # try for vmt material (r1 & r2 [RARE])
+        # vmt = VMT.from_name(name)
+        # if vmt is not None:  # .vmt found
+        #     out.textures = vmt.textures
         #     out.make_nodes()
+        #     return out.material
+
+        # try for rpak material (r2 & r5)
+        print(f'^ MATL.from_name("{name}")')
+        matl = MATL.from_name(name)
+        if matl is not None:  # _wld.json found
+            print("$ make_nodes")
+            out.textures = matl.textures
+            out.make_nodes()
+            return out.material
 
         return out.material
 
 
-class Matl:
+class MATL:
     """Titanfall 2 & Apex Legends .rpak material"""
     assets_folder: str
     textures: Dict[Slot, Any]
@@ -163,55 +248,63 @@ class Matl:
         self.assets_folder = bpy.context.scene.rbsp_prefs.assets_folder
         self.textures = dict()
 
-    @classmethod
-    def load_texture(cls, texture_path: str) -> ImageTexture:
-        raise NotImplementedError()
-        # texture/material_col.rpak -> ImageTexture
-        # texture_folder = ...
-        # texture_base_name = os.path.split_ext(texture_path)[0]
-        # TODO: will this catch .dds w/ 1 file per mip level?
-        # fnmatch.filter(os.listdir(texture_folder), f"{texture_base_name}.*")
-        # texture_path = ...
-        # TODO: return None if FileNotFound
-        full_texture_path = os.path.join(cls.assets_folder, texture_path)
-        # TODO: check to see if texture is already loaded
-        # -- return if found
-        texture = bpy.data.images.load(full_texture_path)
-        assert texture.name == full_texture_path
-        # NOTE: if true, checking it's already been loaded will be easy
-        return texture
+    def load_texture(self, slot: Slot, texture_path: str) -> ImageTexture:
+        if texture_path.startswith("0x"):
+            return  # GUID, no filename
+        # NOTE: .dds w/ all mips only
+        # TODO: skip search if texture is already loaded
+        folder, filename = os.path.split(texture_path)
+        base_name = os.path.splitext(filename)[0]
+        search_folder = os.path.join(
+            self.assets_folder, "exported_files", folder)
+        if not os.path.isdir(search_folder):
+            return
+        # case insensitive file search
+        search_filename = f"{base_name.lower()}.dds"
+        for dds_filename in os.listdir(search_folder):
+            if dds_filename.lower() == search_filename:
+                dds_path = os.path.join(search_folder, dds_filename)
+                texture = bpy.data.images.load(dds_path)
+                self.textures[slot] = texture
+                print(f"+ {search_filename}")
 
     @classmethod
-    def from_name(cls, name: str) -> Matl:
-        # TODO: find case insensitive filename
-        json_filename = os.path.join(
-            cls.assets_folder,
-            "exported_files/material",
-            f"{name}.json")
-        if not os.path.exists(json_filename):
-            return cls()
-        else:
-            return cls.from_filename(json_filename)
+    def from_name(cls, name: str) -> MATL:
+        folder, filename = os.path.split(name)
+        assets_folder = bpy.context.scene.rbsp_prefs.assets_folder
+        search_folder = os.path.join(
+            assets_folder, "exported_files/material", folder)
+        if not os.path.isdir(search_folder):
+            return
+        # case insensitive file search
+        search_filename = f"{filename.lower()}_wld.json"
+        print(f"? {search_folder} | {search_filename}")
+        for json_filename in os.listdir(search_folder):
+            if json_filename.lower() == search_filename:
+                json_path = os.path.join(search_folder, json_filename)
+                print(f"* {json_path}")
+                return cls.from_file(json_path)
 
     @classmethod
-    def from_filename(cls, filename: str) -> Matl:
+    def from_file(cls, filename: str) -> MATL:
         with open(filename) as json_file:
             return cls.from_json(json.load(json_file))
 
     @classmethod
-    def from_json(cls, json_: Dict) -> Matl:
+    def from_json(cls, json_: Dict) -> MATL:
         out = cls()
         matl_textures = json_.get("$textures", dict())
-        raise NotImplementedError()
-        out.textures = {
-            Slot(i): cls.load_texture(texture_path)
-            for i, texture_path in matl_textures.items()}
-        # TODO: out.shader_type = lookup_table[json_["shaderSet"]]
-        # -- shaderSet
+        matl_slot_names = json_.get("$textureTypes")
+        for key, texture_path in matl_textures.items():
+            try:
+                slot = Slot(int(key))
+            except ValueError:
+                slot = (int(key), matl_slot_names.get(key, None))
+            out.load_texture(slot, texture_path)
         return out
 
 
-class Vmt:
+class VMT:
     """Valve Material w/ some respawn-specific features"""
     assets_folder: str
     textures: Dict[Slot, Any]
@@ -241,7 +334,7 @@ class Vmt:
         return texture
 
     @classmethod
-    def from_material(cls, material) -> Vmt:
+    def from_name(cls, name) -> VMT:
         out = cls()
         raise NotImplementedError()
         # TODO: parse .vmt (w/ `bite`)

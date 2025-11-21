@@ -4,27 +4,38 @@ import bpy
 from bpy.types import Collection
 # TODO: see if numpy can speed things up a little
 
-from .materials import make_material
+from .materials import NodeMaker
 from .entities import name_of
 
 
-def blender_uv(u, v):
+def get_base_uv(vertices, index):
+    u, v = vertices[index].uv0
+    return (u, 1 - v)
+
+
+def get_lightmap_uv(vertices, index):
+    vertex = vertices[index]
+    if len(vertex.uv) >= 2:
+        u, v = vertex.uv1
+    else:
+        u, v = 0, 0
     return (u, 1 - v)
 
 
 def all_models(bsp, bsp_collection: Collection):
     geometry_collection = bpy.data.collections.new("geometry")
     bsp_collection.children.link(geometry_collection)
-    # TODO: sort sub-meshes by material (see bsp_tool.scene)
-    # -- combine if same material
-    # -- separate skybox from worldspawn
     for i, model in enumerate(bsp.MODELS):
         model = bsp.model(i)
-        vertices, materials = zip(*[
+        vertex_materials = [
             (vertex, mesh.material)
             for mesh in model.meshes
             for polygon in mesh.polygons
-            for vertex in polygon.vertices])
+            for vertex in polygon.vertices]
+        if len(vertex_materials) != 0:
+            vertices, materials = zip(*vertex_materials)
+        else:  # model w/ no geo
+            vertices, materials = list(), list()
         assert len(vertices) % 3 == 0, "not a triangle soup"
         indices = list(itertools.chain([
             (i + 2, i + 1, i + 0)
@@ -49,7 +60,7 @@ def all_models(bsp, bsp_collection: Collection):
         base_uv.data.foreach_set(
             "uv",
             list(itertools.chain(*[
-                blender_uv(*vertices[index].uv0)
+                get_base_uv(vertices, index)
                 for tri in indices
                 for index in tri])))
 
@@ -57,7 +68,7 @@ def all_models(bsp, bsp_collection: Collection):
         lightmap_uv.data.foreach_set(
             "uv",
             list(itertools.chain(*[
-                blender_uv(*vertices[index].uv1) if len(vertices[index].uv) >= 2 else (0, 0)
+                get_lightmap_uv(vertices, index)
                 for tri in indices
                 for index in tri])))
 
@@ -71,7 +82,7 @@ def all_models(bsp, bsp_collection: Collection):
 
         material_indices = dict()
         for material in {sub_mesh.material for sub_mesh in model.meshes}:
-            blender_material = make_material(material.name)
+            blender_material = NodeMaker.material_from_name(material.name)
             mesh.materials.append(blender_material)
             material_indices[material.name] = len(mesh.materials) - 1
 
@@ -88,6 +99,8 @@ def all_models(bsp, bsp_collection: Collection):
         # lightmap_index.data.foreach_set(
         #     "value",
         #     ...)
+
+        # TODO: separate skybox from worldspawn
 
         mesh.update()
 
