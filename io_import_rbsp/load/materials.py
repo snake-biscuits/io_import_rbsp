@@ -43,7 +43,7 @@ class Slot(enum.Enum):
     ILLUMINATION = 4
     AMBIENT_OCCLUSION = 11  # *
     CAVITY = 12  # *
-    OPACITY_MULTIPLY = 13  # *
+    OPACITY = 13
     DETAIL_ALBEDO = 14  # *
     DETAIL_NORMAL = 15
     UV_DISTORTION = 18  # *
@@ -53,7 +53,6 @@ class Slot(enum.Enum):
     NORMAL_2 = 24
     GLOSS_2 = 25
     SPECULAR_2 = 26
-    # TODO: OPACITY (value unknown)
 
 
 # TODO: shaderset -> preset (_bm_wld) etc.
@@ -66,31 +65,35 @@ class NodeMaker:
         self.textures = dict()
 
     def add_albedo(self, texture, shader):
+        vertex_colour = self.add_node("ShaderNodeVertexColor")
         texture_node = self.add_texture(texture, "Albedo", True)
-        self.link_nodes(texture_node, "Color", shader, "Base Color")
+        colour_mix = self.add_node("ShaderNodeMix")
+        colour_mix.data_type = "RGBA"
+        colour_mix.blend_type = "MULTIPLY"
+        colour_mix.inputs[0].default_value = 1
+        self.link_nodes(vertex_colour, "Color", colour_mix, "A")
+        self.link_nodes(texture_node, "Color", colour_mix, "B")
+        self.link_nodes(colour_mix, "Result", shader, "Base Color")
         self.link_nodes(texture_node, "Alpha", shader, "Alpha")
         return texture_node
 
     def add_blend(self, texture, mix_shader):
-        # TODO: frame
         vertex_colour = self.add_node("ShaderNodeVertexColor")
         texture_node = self.add_texture(texture, "Blend Mask")
-        math_node = self.add_node("ShaderNodeMath")
-        math_node.operation = "SUBTRACT"
-        math_node.use_clamp = True
-        self.link_nodes(vertex_colour, "Alpha", math_node, 0)
-        self.link_nodes(texture_node, "Color", math_node, 1)
-        self.link_nodes(math_node, 0, mix_shader, 0)
-
-    def add_cavity(self, texture, shader):
-        raise NotImplementedError(
-            f"{self.material.name} has a cavity map")
-        # TODO: which slot? use as a bump map?
-        # -- can you have normal & cavity maps in the same material?
+        colour_mix = self.add_node("ShaderNodeMix")
+        colour_mix.data_type = "RGBA"
+        colour_mix.blend_type = "MULTIPLY"
+        colour_mix.inputs[0].default_value = 1
+        self.link_nodes(vertex_colour, "Alpha", colour_mix, "A")
+        self.link_nodes(texture_node, "Color", colour_mix, "B")
+        self.link_nodes(colour_mix, "Result", mix_shader, "Fac")
 
     def add_gloss(self, texture, shader):
+        """inverse of roughness"""
         texture_node = self.add_texture(texture, "Gloss", True)
-        self.link_nodes(texture_node, "Color", shader, "Specular Tint")
+        invert = self.add_node("ShaderNodeInvert")
+        self.link_nodes(texture_node, "Color", invert, "Color")
+        self.link_nodes(invert, "Color", shader, "Roughness")
 
     def add_illumination(self, texture, shader):
         texture_node = self.add_texture(texture, "Illumination", True)
@@ -114,7 +117,7 @@ class NodeMaker:
 
     def add_specular(self, texture, shader):
         texture_node = self.add_texture(texture, "Specular", True)
-        self.link_nodes(texture_node, "Color", shader, "Diffuse Roughness")
+        self.link_nodes(texture_node, "Color", shader, "Specular Tint")
 
     def add_texture(self, texture, label="", albedo=False) -> Node:
         """basic texture node"""
@@ -158,13 +161,14 @@ class NodeMaker:
         output = self.material.node_tree.nodes["Material Output"]
         output.location = (1300, 100)
         self.link_nodes(mix_shader, 0, output, "Surface")
+        return mix_shader
 
     def make_nodes(self):
         self.material.use_nodes = True
         shader_a, frame_a = self.setup_shader_a()
         if Slot.BLEND in self.textures:  # _bm_wld
             shader_b, frame_b = self.setup_shader_b()
-            self.setup_mix_shader(shader_a, shader_b)
+            mix_shader = self.setup_mix_shader(shader_a, shader_b)
         # textures
         for slot, texture in self.textures.items():
             if slot == Slot.ALBEDO:
@@ -185,21 +189,19 @@ class NodeMaker:
             elif slot == Slot.NORMAL_2:
                 map_node = self.add_normal(texture)
                 self.link_nodes(map_node, "Normal", shader_b, "Normal")
+            elif slot == Slot.BLEND:
+                self.add_blend(texture, mix_shader)
             elif slot == Slot.DETAIL_NORMAL:
                 map_node = self.add_normal(texture)
                 output = self.material.node_tree.nodes["Material Output"]
                 self.link_nodes(map_node, "Normal", output, "Displacement")
             elif slot == Slot.ILLUMINATION:
                 self.add_illumination(texture, shader_a)
-            # NOTE: ignoring all other texture slots
-            # elif slot == Slot.OPACITY:  # unknown value
-            #     self.add_opacity(texture, shader_a)
-            # elif slot == Slot.CAVITY:
-            #     self.add_cavity(texture, shader_a)
-            # else:
-            #     raise NotImplementedError(
-            #         f"slot={slot!r}, material={self.material.name!r}")
+            elif slot == Slot.OPACITY:
+                self.add_opacity(texture, shader_a)
+            # NOTE: skipping unimplemented slots
         # TODO: organisation pass (set node locations)
+        # TODO: make locations relative to links
 
     @classmethod
     def material_from_name(cls, name: str, palette=tool_colours):
@@ -227,10 +229,8 @@ class NodeMaker:
         #     return out.material
 
         # try for rpak material (r2 & r5)
-        print(f'^ MATL.from_name("{name}")')
         matl = MATL.from_name(name)
         if matl is not None:  # _wld.json found
-            print("$ make_nodes")
             out.textures = matl.textures
             out.make_nodes()
             return out.material
@@ -266,7 +266,6 @@ class MATL:
                 dds_path = os.path.join(search_folder, dds_filename)
                 texture = bpy.data.images.load(dds_path)
                 self.textures[slot] = texture
-                print(f"+ {search_filename}")
 
     @classmethod
     def from_name(cls, name: str) -> MATL:
@@ -278,11 +277,9 @@ class MATL:
             return
         # case insensitive file search
         search_filename = f"{filename.lower()}_wld.json"
-        print(f"? {search_folder} | {search_filename}")
         for json_filename in os.listdir(search_folder):
             if json_filename.lower() == search_filename:
                 json_path = os.path.join(search_folder, json_filename)
-                print(f"* {json_path}")
                 return cls.from_file(json_path)
 
     @classmethod
