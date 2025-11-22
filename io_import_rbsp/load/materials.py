@@ -77,16 +77,36 @@ class NodeMaker:
         self.link_nodes(texture_node, "Alpha", shader, "Alpha")
         return texture_node
 
+    # TODO: blend modulate group node
+    # -- 6x math nodes
+    # --- - vc.a bm.c
+    # --- + +0.5 ^ (clamp) [blend_factor]
+    # --- * -2.0 ^
+    # --- + +3.0 ^
+    # --- * vc.a ^ [curve]
+    # --- * vc.a [blend_factor]
     def add_blend(self, texture, mix_shader):
+        """quick & dirty blend modulate approximation"""
         vertex_colour = self.add_node("ShaderNodeVertexColor")
         texture_node = self.add_texture(texture, "Blend Mask")
-        colour_mix = self.add_node("ShaderNodeMix")
-        colour_mix.data_type = "RGBA"
-        colour_mix.blend_type = "MULTIPLY"
-        colour_mix.inputs[0].default_value = 1
-        self.link_nodes(vertex_colour, "Alpha", colour_mix, "A")
-        self.link_nodes(texture_node, "Color", colour_mix, "B")
-        self.link_nodes(colour_mix, "Result", mix_shader, "Fac")
+        mix_node = self.add_mixer("MIX")
+        add_node = self.add_mixer("ADD")
+        sub_node = self.add_mixer("SUBTRACT")
+        self.link_nodes(vertex_colour, "Alpha", add_node, "A")
+        self.link_nodes(texture_node, "Color", add_node, "B")
+        self.link_nodes(vertex_colour, "Alpha", sub_node, "A")
+        self.link_nodes(texture_node, "Color", sub_node, "B")
+        self.link_nodes(vertex_colour, "Alpha", mix_node, "Factor")
+        self.link_nodes(sub_node, "Result", mix_node, "A")
+        self.link_nodes(add_node, "Result", mix_node, "B")
+        self.link_nodes(mix_node, "Result", mix_shader, "Fac")
+
+    def add_mixer(self, mode, fac=1):
+        mix_node = self.add_node("ShaderNodeMix")
+        mix_node.data_type = "RGBA"
+        mix_node.blend_type = mode
+        mix_node.inputs[0].default_value = fac
+        return mix_node
 
     def add_gloss(self, texture, shader):
         """inverse of roughness"""
