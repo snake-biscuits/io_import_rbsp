@@ -11,6 +11,9 @@ from bpy.types import Collection
 # foliage > ...
 # auto-hide large collections (> 1000 props)
 
+# NOTE: SourceIO doesn't support v53 .mdl
+# -- will have to roll our own model loader
+
 
 def as_empties(bsp, bsp_collection: Collection):
     """Requires all models to be extracted beforehand"""
@@ -53,22 +56,31 @@ def all_models(bsp, bsp_collection: Collection):
 
 
 def static_props(bsp, bsp_collection: Collection):
-    """https://github.com/llennoco22/Apex-mprt-importer-for-Blender/blob/main/ApexMapImporter/panel_op.py"""
+    # check we have SourceIO installed for loading .mdl
     dependencies = {"SourceIO": "https://github.com/REDxEYE/SourceIO/releases"}
     addons = [m.__name__ for m in addon_utils.modules()]
-    for addon_name in dependencies:
-        assert addon_name in addons, f"Install {addon_name} from {dependencies[addon_name]}"
+    for addon, url in dependencies.items():
+        assert addon in addons, f"Install {addon} from {url}"
+
+    # load models [WIP]
     models_folder = bpy.context.scene.rbsp_prefs.models_folder
     if not os.path.isdir(models_folder):
-        raise FileNotFoundError(f"Models path ({models_folder}) is not a folder")
+        return
     for model_name in bsp.GAME_LUMP.model_names:
-        bpy.ops.source_io.mdl(filepath=models_folder, files=[{"name": model_name}])
         # NOTE: SourceIO makes collections for each model (use instanced collections?)
-        # NOTE: import scale?
+        # NOTE: does SourceIO force an import scale?
         # Collection: body; model(s): body_dmx/{prop_name}_LOD0.dmx (may not match!)
         # but if we delete the bodygroup collections we can always match it's contents
+        # TODO: relocate mdl collection
+        bpy.ops.source_io.mdl(
+            filepath=models_folder,
+            files=[{"name": model_name}])
         ...
-        # TODO: move collection to a base collection
+
+    # place models [WIP]
     for prop in bsp.GAME_LUMP.props:
-        # TODO: instance and place
+        # TODO:
+        # -- select model
+        # -- instance w/ position, rotation & scale
+        # -- diffuse colour custom attribute?
         ...
