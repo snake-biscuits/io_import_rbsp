@@ -56,7 +56,7 @@ trigger_colours = {
     "trigger_teleporter": blue}
 
 
-def all_triggers(bsp):
+def all_triggers(bsp, ent_collections):
     entity_blocks = {
         "bsp": bsp.ENTITIES,
         "env": bsp.ENTITIES_env,
@@ -65,7 +65,7 @@ def all_triggers(bsp):
         "sound": bsp.ENTITIES_snd,
         "spawn": bsp.ENTITIES_spawn}
     for block_name, entities in entity_blocks.items():
-        entity_collection = bpy.data.collections[block_name]
+        entity_collection = ent_collections[block_name]
         for entity in entities:
             classname = editorclass_of(entity)
             if classname not in trigger_colours:
@@ -106,8 +106,10 @@ def trigger_brushes(entity: Entity, palette=trigger_colours) -> Mesh:
         for plane_index, plane in brush.items():
             normal, distance = plane
             # make base polygon
-            non_parallel = mathutils.Vector(
-                (0, 0, -1)) if abs(normal.z) != 1 else mathutils.Vector((0, -1, 0))
+            if abs(normal.z) != 1:
+                non_parallel = mathutils.Vector((0, 0, -1))
+            else:
+                non_parallel = mathutils.Vector((0, -1, 0))
             local_y = mathutils.Vector.cross(non_parallel, normal).normalized()
             local_x = mathutils.Vector.cross(local_y, normal).normalized()
             center = normal * distance
@@ -117,11 +119,6 @@ def trigger_brushes(entity: Entity, palette=trigger_colours) -> Mesh:
                 center + ((local_x + local_y) * radius),
                 center + ((local_x + -local_y) * radius),
                 center + ((-local_x + -local_y) * radius)]
-            # slice by other planes
-            for other_plane_index, other_plane in brushes[brush_index].items():
-                if other_plane_index == plane_index:
-                    continue  # skip self
-                polygon = clip(polygon, other_plane)["back"]
             # slice by other planes
             for other_plane_index, other_plane in brushes[brush_index].items():
                 if other_plane_index == plane_index:
@@ -169,7 +166,8 @@ Polygon = List[mathutils.Vector]
 def clip(polygon: Polygon, plane: Plane) -> Dict[str, Polygon]:
     normal, distance = plane
     split = {"back": [], "front": []}
-    for i, A in enumerate(polygon):  # NOTE: polygon's winding order is preserved
+    # NOTE: polygon's winding order is preserved
+    for i, A in enumerate(polygon):
         B = polygon[(i + 1) % len(polygon)]  # next point
         A_distance = mathutils.Vector.dot(normal, A) - distance
         B_distance = mathutils.Vector.dot(normal, B) - distance

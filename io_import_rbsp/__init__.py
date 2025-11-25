@@ -1,7 +1,9 @@
+from typing import Dict
+
 import bpy
 from bpy_extras.io_utils import ImportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
-from bpy.types import Operator
+from bpy.types import Collection, Operator
 
 import bsp_tool
 
@@ -31,6 +33,8 @@ class ImportRBSP(Operator, ImportHelper):
     # importer settings
     load_geometry: BoolProperty(
         name="Geometry", description="Load geometry", default=True)  # noqa F722
+    # TODO: split materials off into an EnumProperty
+    # -- another way to trigger material imports would be great for testing too
     load_triggers: BoolProperty(
         name="Triggers", description="Load triggers", default=True)  # noqa F722
     load_entities: BoolProperty(
@@ -52,6 +56,7 @@ class ImportRBSP(Operator, ImportHelper):
 
     # TODO: loading % indicators
     # TODO: error handling
+    # TODO: self.report({"INFO"}, <timestamps>)
     def execute(self, context):
         bsp = bsp_tool.load_bsp(self.filepath)
         if not is_titanfall_engine(bsp):
@@ -59,32 +64,36 @@ class ImportRBSP(Operator, ImportHelper):
                 {"ERROR_INVALID_INPUT"},
                 "Not a Titanfall Engine .bsp!")
             return {"CANCELLED"}
-        # TODO: self.report({"INFO"}, <timestamps>)
-        # bsp_collection
+
+        # main collection
         if bsp.filename not in bpy.data.collections:
             bsp_collection = bpy.data.collections.new(bsp.filename)
             context.scene.collection.children.link(bsp_collection)
         else:
             bsp_collection = bpy.data.collections[bsp.filename]
-        # load based on chosen options
-        # TODO: pre-check extracted assets folders in prefs
-        # -- can do a bunch of skips if they're empty
+
+        # level geometry & materials
         if self.load_geometry:
+            geometry_collection = make_geometry_collection(bsp_collection)
+            load.geometry.all_models(bsp, geometry_collection)
             # NOTE: also loads materials
-            load.geometry.all_models(bsp, bsp_collection)
+        # TODO: report how many materials were loaded from files
+        # -- self.report({"INFO"}, "{x} / {total} materials loaded")
+
+        # solid & point entities
         if self.load_triggers or self.load_entities:
-            make_entities_collection(bsp_collection)
-            # NOTE: collections are looked up by name, sketchy!
+            ent_collections = make_entity_collections(bsp_collection)
             if self.load_triggers:
-                load.triggers.all_triggers(bsp)
+                load.triggers.all_triggers(bsp, ent_collections)
             if self.load_entities:
-                load.entities.all_entities(bsp)
+                load.entities.all_entities(bsp, ent_collections)
+
         # props
         if self.load_props == "Empties":
             load.props.as_empties(bsp, bsp_collection)
         elif self.load_props == "Instances":
-            # TODO: pass down preferences for asset folders
             load.props.static_props(bsp, bsp_collection)
+
         # TODO: scale the whole import (Engine Units -> Inches)
         # TODO: override default view clipping (16 near, 102400 far)
         del bsp  # don't cache!
@@ -103,13 +112,26 @@ def is_titanfall_engine(bsp) -> bool:
     return valid_bspclass and valid_branch
 
 
-def make_entities_collection(bsp_collection):
+def make_entity_collections(bsp_collection) -> Dict[str, Collection]:
+    out = dict()
     entities_collection = bpy.data.collections.new("entities")
     bsp_collection.children.link(entities_collection)
     entity_blocks = ("bsp", "env", "fx", "script", "sound", "spawn")
     for block_name in entity_blocks:
         entity_collection = bpy.data.collections.new(block_name)
         entities_collection.children.link(entity_collection)
+        out[block_name] = entity_collection
+    return out
+
+
+# BUG: makes a new collection if map is already loaded?
+def make_geometry_collection(bsp_collection) -> Collection:
+    for child in bsp_collection.children:
+        if child.name.startswith("geometry"):
+            return child
+    geometry_collection = bpy.data.collections.new("geometry")
+    bsp_collection.children.link(geometry_collection)
+    return geometry_collection
 
 
 # Only needed if you want to add into a dynamic menu

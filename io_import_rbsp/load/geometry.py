@@ -22,9 +22,7 @@ def get_lightmap_uv(vertices, index):
     return (u, 1 - v)
 
 
-def all_models(bsp, bsp_collection: Collection):
-    geometry_collection = bpy.data.collections.new("geometry")
-    bsp_collection.children.link(geometry_collection)
+def all_models(bsp, geometry_collection: Collection):
     for i, model in enumerate(bsp.MODELS):
         model = bsp.model(i)
         vertex_materials = [

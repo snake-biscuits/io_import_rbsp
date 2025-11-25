@@ -101,7 +101,7 @@ def set_location(blender_object: Any, entity: Entity):
     blender_object.location = location
 
 
-def all_entities(bsp, converters=converters):
+def all_entities(bsp, ent_collections, converters=converters):
     entity_blocks = {
         "bsp": bsp.ENTITIES,
         "env": bsp.ENTITIES_env,
@@ -110,7 +110,7 @@ def all_entities(bsp, converters=converters):
         "sound": bsp.ENTITIES_snd,
         "spawn": bsp.ENTITIES_spawn}
     for block_name, entities in entity_blocks.items():
-        entity_collection = bpy.data.collections[block_name]
+        entity_collection = ent_collections[block_name]
         for entity in entities:
             classname = editorclass_of(entity)
             blenderify = converters.get(classname, lambda e: None)
