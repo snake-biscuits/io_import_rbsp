@@ -14,13 +14,12 @@ Blender importer for Titanfall Engine map files
 
 ## Installation
 
-In **Blender**:
- * `Edit > Preferences > Add-ons > Install`
- * Find `io_import_rbsp_vX.Y.Z_bX.Y.zip`
-   - `vX.Y.Z` is the addon version
-   - `bX.Y` is the Blender version
- * Click `Install Addon`
- * Check the box to enable `Import-Export: io_import_rbsp`
+In **Blender** 4.5 or later:
+ * `Edit > Preferences > Add-ons`
+ * Click the `v` icon in the top right & select `Install from Disk`
+ * Find `io_import_rbsp-X.Y.Z.zip` in the file browser
+   - `X.Y.Z` is the addon version
+ * Click the `Install from Disk` button
 
 
 ## Usage
@@ -30,53 +29,80 @@ In **Blender**:
 > Test a small map before loading Olympus and setting your PC on fire
 
 
-### Extract Maps
+### Files to Extract
+For a full import, you need:
+ * `maps/mapname.bsp`
+ * `models/`
+ * `materials/`
 
-Map files are stored in `.vpk` archives, you'll need extra tools to get them:
- * Install [HarmonyVPKTool](https://github.com/harmonytf/HarmonyVPKTool/releases/latest) (if you haven't already)
+You do not have to extract all the game's assets.
+There will be archives with the same name as the map file.
+(Except lobbies, which use the name `mp_common`)
+
+Which archives to search:
+ * Titanfall
+   - `Titanfall/vpk/*mapname*_dir.vpk`
+ * Titanfall 2
+   - `Titanfall2/r2/pak/Win64/mapname.vpk`
+   - `Titanfall2/vpk/*mapname*_dir.vpk`
+ * Apex Legends
+   - `ApexLegends/r2/pak/Win64/mapname.vpk`
+   - `ApexLegends/r2/pak/Win64/mapname_client_perm.vpk`
+   - `ApexLegends/r2/pak/Win64/mapname_client_temp.vpk`
+   - `ApexLegends/vpk/*mapname*_dir.vpk` (before Season 18)
+
+Where to extract files:
+ * Extract the whole `maps/` folder to someplace you'll remember
+   - for Titanfall 1 & 2 you only need the `.bsp` & `.ent` files
+   - Apex Legends maps after Season 11 need `.bsp_lump` files
+ * Extract `models/` & `materials/` to the same folder
+   - NOTE: HarmonyVPKTool exports full paths
+ * Extract `.rpak` assets w/ the extract button
+   - `io_import_rbsp` will look in `exported_files/` for assets
+
+### Extract files from `.vpk`
+ * Install [HarmonyVPKTool](https://github.com/harmonytf/HarmonyVPKTool/)
  * Locate the `.vpk`s for the game you want to work with (game must be installed)
    - `Titanfall/vpk/`
    - `Titanfall2/vpk/`
    - `Apex Legends/vpk/`
- * Open the **dir** vpk (`mp_whatever.bsp.pak000_dir.vpk`) for the map you want to load
-   - You can find a list of map names for each game in the [Wiki](https://github.com/snake-biscuits/io_import_rbsp/wiki)
-   - The lobby maps are always in `mp_common.bsp.pak000_dir.vpk`
- * Extract the whole `maps/` folder to someplace you'll remember
-   - for Titanfall 1 & 2 you only need the `.bsp` & `.ent` files
-   - Apex Legends maps after season 11 need `.bsp_lump` files
+ * Extract the `maps/`, `materials/` & `models/` folders
+ * Some materials & models may be in `mp_common.vpk`
 
+### Export files from `.rpak`
+For this stage you will need [RSX](https://github.com/r-ex/rsx/)
 
-<!-- TODO: Materials & Models -->
-<!-- Titanfall models/ & materials/ folder + common.vpk -->
-<!-- Need to generate an asset library for props & materials -->
+Important Settings:
+ * Export asset names, not GUIDs
+ * Full asset paths
+ * Material as .json (Raw Struct)
+ * Texture as .dds (All Mips)
 
+Extract all `_wld` & `_fix` materials.
+Textures linked to materials should be exported automatically.
+
+Apex Legends `.rpak` should also include `maps/` & `models/`
 
 ### Import Map
+Warnings:
+ * This can use a lot of RAM (16GB+ for a Titanfall 2 map)
+ * Seriously pushes Blender to it's limits
+   - Vulkan backend + AMD GPU + Linux = crash; **use OpenGL**
+ * Save work & close other programs before loading
+ * Test with a small map first to see how your PC fares
+
 Once you've extracted the files you need:
+ * Set `Properties > Scene > Titanfall Engine Assets` folders
+   - `RSX Folder` should contain `rsx.exe` & `exported_files/`
+   - `VPK Folder` should contain `models/` & `materials/`
  * `File > Import > Titanfall Engine .bsp`
  * Select the `.bsp` (`.bsp_lump` & `.ent` files need to be in the same folder)
  * Choose your settings
  * Click Import
  * Wait a few minutes (Can easily take 1hr+ on Apex Legends maps)
-<!-- Cry when it breaks and send me an e-mail to fix it -->
-<!-- Materials & Models will require paths set in Preferences & SourceIO -->
-
-### Import Materials
-> TODO
-
-### Import Models
-**(EXPERIMENTAL) TITANFALL 2 & APEX LEGENDS ONLY!**
-- Titanfall: `.vpk` Materials & Models
-- Titanfall 2: `.rpak` Materials; `.vpk` Models
-- Apex: `.rpak` Materials & Models
- * [Legion Workflow](https://drive.google.com/file/d/1ApByE0p5MzVV95dUsQ0seciCA7Cl5WFZ/view)
- * Requires:
-   - [.cast](https://github.com/dtzxporter/cast)
-   - [.mprt](https://github.com/llennoco22/Apex-mprt-importer-for-Blender)
 
 
-
-## Related Tools
+## Other Tools
 
 ### Respawn VPK
  * [HarmonyVPKTool](https://github.com/harmonytf/HarmonyVPKTool/releases/latest)
@@ -85,53 +111,19 @@ Once you've extracted the files you need:
  * [VRChat-Titanfall-Unity-Tools](https://github.com/Swagguy47/VRChat-Titanfall-Unity-Tools)
 
 ### More Blender Addons
- * [SourceIO](https://github.com/REDxEYE/SourceIO)
+ * [`SourceIO`](https://github.com/REDxEYE/SourceIO)
    - GoldSrc & Source Engine importer (`.bsp`, `.vmt`, `.vtf`, `.mdl`)
- * [SourceOps](https://github.com/bonjorno7/SourceOps)
+ * [`SourceOps`](https://github.com/bonjorno7/SourceOps)
    - Source Engine model exporter
- * [Perimeter](https://github.com/EM4Volts/Perimeter)
-   - Titanfall 2 `.mdl` editing QoL tool
- * [PyD3DBSP](https://github.com/mauserzjeh/PyD3DBSP) (Archived)
+ * [`PyD3DBSP`](https://github.com/mauserzjeh/PyD3DBSP) (Archived)
    - Call of Duty 2 `.bsp` importer
- * [blender_io_mesh_bsp](https://github.com/andyp123/blender_io_mesh_bsp)
+ * [`blender_io_mesh_bsp`](https://github.com/andyp123/blender_io_mesh_bsp)
    - Quake 1 `.bsp` importer
- * [Blender_BSP_Importer](https://github.com/QuakeTools/Blender_BSP_Importer)
+ * [`Blender_BSP_Importer`](https://github.com/QuakeTools/Blender_BSP_Importer)
    - Quake 3 `.bsp` importer
 
-## FAQs
- * No Textures / Models?
-   - I'm working on it
- * Why can't I see anything?
-   - Titanfall Engine maps are huge, you need to increase your view distance
-   - `3D View > N > View > Clip Start: 16, End: 102400` (only affects that 3D view)
-     - You will also need to increase the clipping distance for all cameras
- * Why is my `.blend` file still huge after I deleted everything?
-   - Blender keeps deleted items cached in case you want to undo
-   - To clear this cache use: `File > Clean Up > Recursive Unused Data Blocks`
-   - Or set the **Outliner** display mode to **Orphan Data** & click **Purge**
- * It broke? Help?
-   - Ask around on Discord, you might've missed a step someplace
-   - If you're loading a brand new Apex map, it might not be supported yet
- * Can I use this to make custom maps?
-   - No, we don't know enough about Respawn's `.bsp` format to make compilers
-   - As easy as it might sound on paper, editing a `.bsp` directly is no small task
- * Can I use this for animations?
-   - Sure! but be sure to credit the tool someplace
-   - And credit Respawn too! they made the maps in the first place
 
-### Further Questions
-
-> NOTE: I am a full-time Uni Student in an Australian Timezone
-
-> Don't go expecting an immediate response
-
-Open a GitHub Issue with the `question` label
-
-If you don't want a GitHub account I can be found on Discord as `b!scuit#3659`
-
-**Send your Question in a Message Request or I'll assume you're a bot**
-
-You can also find me in these Titanfall & Apex Discords:
+## Modding Community Links
   * Titanfall 1:
     - [Harmony](https://harmony.tf/)
   * Titanfall 2:
@@ -141,5 +133,3 @@ You can also find me in these Titanfall & Apex Discords:
     - [Legion+](https://github.com/r-ex/LegionPlus)
     - [R5Reloaded](https://r5reloaded.com/)
 <!-- TODO: add Titanfall Online Revive when they go public -->
-
-**If you join one of the above Discords just to add me, I'll assume you're a bot**
