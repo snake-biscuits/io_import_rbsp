@@ -99,6 +99,7 @@ def all_models(bsp, geometry_collection: Collection):
         #     ...)
 
         # TODO: separate skybox from worldspawn
+        # TODO: separate atmospheric effects from worldspawn
 
         mesh.update()
 

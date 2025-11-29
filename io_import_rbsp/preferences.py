@@ -3,20 +3,12 @@ from bpy.props import StringProperty
 
 
 class Preferences(bpy.types.PropertyGroup):
-    assets_folder: StringProperty(
-        name="Assets folder", subtype="DIR_PATH")  # noqa 722
-    # TODO: per-game extracted vpk assets folder (r1 & r2)
+    rsx_folder: StringProperty(
+        name="RSX folder", subtype="DIR_PATH")  # noqa 722
+    vpk_folder: StringProperty(
+        name="VPK folder", subtype="DIR_PATH")  # noqa 722
     # TODO: game folders for automated extraction
-
-    # TODO: .stbsp (could be a github issue)
-    # -- use .stbsp to optimise loaded material mip levels
-    # NOTE: would need to target a camera
-    # -- could rely on static position
-    # -- or match multiple .stbsp columns to an animated camera's route
-    # -- tho to get the camera animated, you'd want to load the geo first
-    # NOTE: this is why materials was a seperate load stage before
-    # -- it lets users re-import materials at a higher quality if they wish
-    # -- can't do that without decoupling materials from .all_geometry
+    # -- need command line extraction tools
 
 
 class SCENE_PT_ReSourceAssetFolders(bpy.types.Panel):
@@ -29,7 +21,8 @@ class SCENE_PT_ReSourceAssetFolders(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(context.scene.rbsp_prefs, "assets_folder")
+        layout.prop(context.scene.rbsp_prefs, "rsx_folder")
+        layout.prop(context.scene.rbsp_prefs, "vpk_folder")
 
 
 classes = (

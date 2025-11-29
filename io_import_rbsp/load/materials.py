@@ -226,7 +226,10 @@ class NodeMaker:
     @classmethod
     def material_from_name(cls, name: str, palette=tool_colours):
         folder, filename = os.path.split(name)
-        if filename in bpy.data.materials:  # already constructed
+
+        # return early if material already exists
+        # NOTE: checking for filenames isn't ideal
+        if filename in bpy.data.materials:
             return bpy.data.materials[filename]
 
         out = cls()
@@ -260,12 +263,12 @@ class NodeMaker:
 
 class MATL:
     """Titanfall 2 & Apex Legends .rpak material"""
-    assets_folder: str
+    rsx_folder: str
     textures: Dict[Slot, Any]
     # ^ {Slot.ALBEDO: ImageTexture}
 
     def __init__(self):
-        self.assets_folder = bpy.context.scene.rbsp_prefs.assets_folder
+        self.rsx_folder = bpy.context.scene.rbsp_prefs.rsx_folder
         self.textures = dict()
 
     def load_texture(self, slot: Slot, texture_path: str) -> ImageTexture:
@@ -276,7 +279,7 @@ class MATL:
         folder, filename = os.path.split(texture_path)
         base_name = os.path.splitext(filename)[0]
         search_folder = os.path.join(
-            self.assets_folder, "exported_files", folder)
+            self.rsx_folder, "exported_files", folder)
         if not os.path.isdir(search_folder):
             return
         # case insensitive file search
@@ -289,10 +292,10 @@ class MATL:
 
     @classmethod
     def from_name(cls, name: str) -> MATL:
+        rsx_folder = bpy.context.scene.rbsp_prefs.rsx_folder
         folder, filename = os.path.split(name)
-        assets_folder = bpy.context.scene.rbsp_prefs.assets_folder
         search_folder = os.path.join(
-            assets_folder, "exported_files/material", folder)
+            rsx_folder, "exported_files/material", folder)
         if not os.path.isdir(search_folder):
             return
         # case insensitive file search
@@ -323,24 +326,23 @@ class MATL:
 
 class VMT:
     """Valve Material w/ some respawn-specific features"""
-    assets_folder: str
+    vpk_folder: str
     textures: Dict[Slot, Any]
     # ^ {Slot.ALBEDO: ImageTexture}
 
     def __init__(self):
-        self.assets_folder = bpy.context.scene.rbsp_prefs.vpk_folder
+        self.vpk_folder = bpy.context.scene.rbsp_prefs.vpk_folder
         self.textures = dict()
 
-    @classmethod
-    def load_texture(cls, texture_path: str) -> ImageTexture:
-        full_texture_path = os.path.join(cls.assets_folder, texture_path)
+    def load_texture(self, slot: Slot, texture_path: str) -> ImageTexture:
+        full_texture_path = os.path.join(self.vpk_folder, texture_path)
         if not os.path.exists(full_texture_path):
             return None
         # TODO: check to see if texture is already loaded
         # -- return if found
         # TODO: .vtf -> PIL.Image (@ target miplevel)
         # -- MRVN-VMT & respawn_cubemap_tool should be good references
-        # -- or maybe SourceIO
+        # -- can we feed Blender the .vtf as a .dds? (convert w/ bite)
         # NOTE: Pillow should be available as a dependency of bsp_tool
         image = ...
         raise NotImplementedError()
@@ -348,10 +350,11 @@ class VMT:
             texture_path, width=image.width, height=image.height)
         pixel_array = np.asarray(image.convert("RGBA"), dtype=np.float32)
         texture.pixels[::] = (pixel_array / 255).ravel()
-        return texture
+        self.textures[slot] = texture
 
     @classmethod
     def from_name(cls, name) -> VMT:
+        vpk_folder = bpy.context.scene.rbsp_prefs.vpk_folder
         out = cls()
         raise NotImplementedError()
         # TODO: parse .vmt (w/ `bite`)

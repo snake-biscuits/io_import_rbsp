@@ -89,10 +89,12 @@ class ImportRBSP(Operator, ImportHelper):
                 load.entities.all_entities(bsp, ent_collections)
 
         # props
+        if self.load_props != "None":
+            prop_collection = make_prop_collection(bsp_collection)
         if self.load_props == "Empties":
-            load.props.as_empties(bsp, bsp_collection)
+            load.props.as_empties(bsp, prop_collection)
         elif self.load_props == "Instances":
-            load.props.static_props(bsp, bsp_collection)
+            load.props.static_props(bsp, prop_collection)
 
         # TODO: scale the whole import (Engine Units -> Inches)
         # TODO: override default view clipping (16 near, 102400 far)
@@ -134,6 +136,15 @@ def make_geometry_collection(bsp_collection) -> Collection:
     return geometry_collection
 
 
+def make_prop_collection(bsp_collection) -> Collection:
+    for child in bsp_collection.children:
+        if child.name.startswith("static props"):
+            return child
+    prop_collection = bpy.data.collections.new("static props")
+    bsp_collection.children.link(prop_collection)
+    return prop_collection
+
+
 # Only needed if you want to add into a dynamic menu
 def menu_func_import(self, context):
     self.layout.operator(ImportRBSP.bl_idname, text=ImportRBSP.bl_label)
@@ -141,7 +152,8 @@ def menu_func_import(self, context):
 
 def register():
     preferences.register()
-    bpy.utils.register_submodule_factory(__name__, ("bsp_tool", "load"))
+    bpy.utils.register_submodule_factory(__name__, (
+        "ass", "breki", "bsp_tool", "load"))
     bpy.utils.register_class(ImportRBSP)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
 

@@ -15,7 +15,10 @@ website = "https://github.com/snake-biscuits/io_import_rbsp"
 license = ["SPDX:GPL-3.0"]
 copyright = ["2021 Jared Ketterer"]
 
-wheels = ["./wheels/bsp_tool-0.6.0-py3-none-any.whl"]
+wheels = [
+    "./wheels/ass-0.1.0-py3-none-any.whl",
+    "./wheels/breki-0.1.0-py3-none-any.whl",
+    "./wheels/bsp_tool-0.6.0-py3-none-any.whl"]
 
 [permissions]
 files = "Import .bsp files"
