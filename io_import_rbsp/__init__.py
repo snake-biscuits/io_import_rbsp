@@ -1,3 +1,4 @@
+import os
 from typing import Dict
 
 import bpy
@@ -5,6 +6,7 @@ from bpy_extras.io_utils import ImportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Collection, Operator
 
+from ass.scene.valve import Mdl
 import bsp_tool
 
 from . import load
@@ -14,8 +16,8 @@ from . import preferences
 bl_info = {
     "name": "io_import_rbsp",
     "author": "Jared Ketterer (snake-biscuits / Bikkie)",
-    "version": (1, 3, 0),
-    "blender": (4, 2, 0),
+    "version": (1, 4, 0),
+    "blender": (4, 5, 0),
     "location": "File > Import > Titanfall Engine .bsp",
     "description": "Import maps from Titanfall, Titanfall 2 & Apex Legends",
     "doc_url": "https://github.com/snake-biscuits/io_import_rbsp",
@@ -33,8 +35,8 @@ class ImportRBSP(Operator, ImportHelper):
     # importer settings
     load_geometry: BoolProperty(
         name="Geometry", description="Load geometry", default=True)  # noqa F722
-    # TODO: split materials off into an EnumProperty
-    # -- another way to trigger material imports would be great for testing too
+    load_materials: BoolProperty(
+        name="Materials", description="Load materials", default=True)  # noqa F722
     load_triggers: BoolProperty(
         name="Triggers", description="Load triggers", default=True)  # noqa F722
     load_entities: BoolProperty(
@@ -50,19 +52,16 @@ class ImportRBSP(Operator, ImportHelper):
              "Decent performance"),  # noqa F722
             ("Empties", "Use Empties",  # noqa F722
              "Place empties at prop origins"),  # noqa F722
-            ("Instances", "Instanced Collections",  # noqa F722
+            ("Models", "Textured Models",  # noqa F722
              "Full props & materials; Very slow")),  # noqa F722
         default="None")  # noqa F722
 
-    # TODO: loading % indicators
-    # TODO: error handling
-    # TODO: self.report({"INFO"}, <timestamps>)
     def execute(self, context):
         bsp = bsp_tool.load_bsp(self.filepath)
         if not is_titanfall_engine(bsp):
             self.report(
-                {"ERROR_INVALID_INPUT"},
-                "Not a Titanfall Engine .bsp!")
+                {"ERROR_INVALID_INPUT"}, "Not a Titanfall Engine .bsp!")
+            del bsp  # cleanup
             return {"CANCELLED"}
 
         # main collection
@@ -74,9 +73,11 @@ class ImportRBSP(Operator, ImportHelper):
 
         # level geometry & materials
         if self.load_geometry:
-            geometry_collection = make_geometry_collection(bsp_collection)
-            load.geometry.all_models(bsp, geometry_collection)
-            # NOTE: also loads materials
+            geo_collection = make_collection(bsp_collection, "geometry")
+            load.geometry.all_models(bsp, geo_collection)
+
+        if self.load_materials:
+            load.materials.all_materials()  # update all placeholders
         # TODO: report how many materials were loaded from files
         # -- self.report({"INFO"}, "{x} / {total} materials loaded")
 
@@ -90,14 +91,15 @@ class ImportRBSP(Operator, ImportHelper):
 
         # props
         if self.load_props != "None":
-            prop_collection = make_prop_collection(bsp_collection)
+            prop_collection = make_collection(bsp_collection, "static props")
         if self.load_props == "Empties":
             load.props.as_empties(bsp, prop_collection)
-        elif self.load_props == "Instances":
+        elif self.load_props == "Models":
             load.props.static_props(bsp, prop_collection)
 
         # TODO: scale the whole import (Engine Units -> Inches)
         # TODO: override default view clipping (16 near, 102400 far)
+        # TODO: self.report({"INFO"}, "took <X> seconds to import <mapname>")
         del bsp  # don't cache!
         return {"FINISHED"}
 
@@ -114,6 +116,16 @@ def is_titanfall_engine(bsp) -> bool:
     return valid_bspclass and valid_branch
 
 
+# BUG: makes a new collection if map is already loaded?
+def make_collection(parent: Collection, name: str) -> Collection:
+    for child in parent.children:  # doesn't work?
+        if child.name.startswith(name):
+            return child
+    child = bpy.data.collections.new(name)
+    parent.children.link(child)
+    return child
+
+
 def make_entity_collections(bsp_collection) -> Dict[str, Collection]:
     out = dict()
     entities_collection = bpy.data.collections.new("entities")
@@ -126,42 +138,98 @@ def make_entity_collections(bsp_collection) -> Dict[str, Collection]:
     return out
 
 
-# BUG: makes a new collection if map is already loaded?
-def make_geometry_collection(bsp_collection) -> Collection:
-    for child in bsp_collection.children:
-        if child.name.startswith("geometry"):
-            return child
-    geometry_collection = bpy.data.collections.new("geometry")
-    bsp_collection.children.link(geometry_collection)
-    return geometry_collection
+class ImportMATL(Operator, ImportHelper):
+    """Load .rpak MATL asset"""
+    bl_idname = "io.import_rbsp.matl_import"
+    bl_label = "Titanfall Engine MATL"
+    filename_ext = ".json"
+    filter_glob: StringProperty(
+        default="*.json", options={"HIDDEN"}, maxlen=255)  # noqa F722
+
+    def execute(self, context):
+        maker = load.materials.NodeMaker()
+        matl = load.materials.MATL.from_file(self.filepath)
+        maker.textures = matl.textures
+        maker.make_nodes()
+        del maker, matl
+        return {"FINISHED"}
 
 
-def make_prop_collection(bsp_collection) -> Collection:
-    for child in bsp_collection.children:
-        if child.name.startswith("static props"):
-            return child
-    prop_collection = bpy.data.collections.new("static props")
-    bsp_collection.children.link(prop_collection)
-    return prop_collection
+class ImportMDL(Operator, ImportHelper):
+    """Load Titanfall 2 v53 .mdl"""
+    bl_idname = "io_import_rbsp.mdl_import"
+    bl_label = "Titanfall 2 v53 .mdl"
+    filename_ext = ".mdl"
+    filter_glob: StringProperty(
+        default="*.mdl", options={"HIDDEN"}, maxlen=255)  # noqa F722
+
+    # TODO: importer settings
+    # -- IntProperty  target body group
+    # -- IntProperty  target lod
+    # -- BoolProperty load materials
+
+    def execute(self, context):
+        try:
+            mdl = Mdl.from_file(self.filepath)
+        except Exception:
+            self.report({"ERROR_INVALID_INPUT"}, "Not a Titanfall 2 v53 .mdl")
+            return {"CANCELLED"}
+
+        base_name = os.path.basename(mdl.filename)
+        base_name = os.path.splitext(base_name)[0]
+        target = f"{base_name}.lod0"
+        # NOTE: these functions don't exist yet
+        mesh = load.geometry.from_model(mdl.models[target])
+        load.materials.complete(mesh)
+        # TODO: mesh -> blender object
+        # -- obj = utils.objectify(mesh, name=base_name)
+        # -- obj.custom_data["filepath"] = mdl.name
 
 
-# Only needed if you want to add into a dynamic menu
-def menu_func_import(self, context):
+# NOTE: not yet implemented
+# class ImportVMT(Operator, ImportHelper):
+#     """Load Titanfall Engine .vmt"""
+#     bl_idname = "io.import_rbsp.vmt_import"
+#     bl_label = "Titanfall Engine .vmt"
+#     filename_ext = ".vmt"
+#     filter_glob: StringProperty(
+#         default="*.vmt", options={"HIDDEN"}, maxlen=255)  # noqa F722
+#
+#     def execute(self, context):
+#         maker = load.materials.NodeMaker()
+#         vmt = load.materials.VMT.from_file(self.filepath)
+#         maker.textures = vmt.textures
+#         maker.make_nodes()
+#         del maker, vmt
+#         return {"FINISHED"}
+
+
+def add_operators(self, context):
+    """for adding to a dynamic menu"""
     self.layout.operator(ImportRBSP.bl_idname, text=ImportRBSP.bl_label)
+    self.layout.operator(ImportMDL.bl_idname, text=ImportMDL.bl_label)
+    self.layout.operator(ImportMATL.bl_idname, text=ImportMATL.bl_label)
+    # self.layout.operator(ImportVMT.bl_idname, text=ImportVMT.bl_label)
 
 
 def register():
     preferences.register()
     bpy.utils.register_submodule_factory(__name__, (
         "ass", "breki", "bsp_tool", "load"))
+    bpy.utils.register_class(ImportMATL)
+    bpy.utils.register_class(ImportMDL)
     bpy.utils.register_class(ImportRBSP)
-    bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
+    # bpy.utils.register_class(ImportVMT)
+    bpy.types.TOPBAR_MT_file_import.append(add_operators)
 
 
 def unregister():
     preferences.unregister()
+    bpy.utils.unregister_class(ImportMATL)
+    bpy.utils.unregister_class(ImportMDL)
     bpy.utils.unregister_class(ImportRBSP)
-    bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
+    # bpy.utils.unregister_class(ImportVMT)
+    bpy.types.TOPBAR_MT_file_import.remove(add_operators)
 
 
 if __name__ == "__main__":

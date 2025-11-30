@@ -4,7 +4,7 @@ import bpy
 from bpy.types import Collection
 # TODO: see if numpy can speed things up a little
 
-from .materials import NodeMaker
+from .materials import placeholder
 from .entities import name_of
 
 
@@ -20,6 +20,10 @@ def get_lightmap_uv(vertices, index):
     else:
         u, v = 0, 0
     return (u, 1 - v)
+
+
+# TODO: ass.geometry.Model -> Blender Model
+# -- def from_model(...) -> Mesh:
 
 
 def all_models(bsp, geometry_collection: Collection):
@@ -80,7 +84,7 @@ def all_models(bsp, geometry_collection: Collection):
 
         material_indices = dict()
         for material in {sub_mesh.material for sub_mesh in model.meshes}:
-            blender_material = NodeMaker.material_from_name(material.name)
+            blender_material = placeholder(material.name)
             mesh.materials.append(blender_material)
             material_indices[material.name] = len(mesh.materials) - 1
 

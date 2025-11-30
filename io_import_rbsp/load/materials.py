@@ -3,16 +3,61 @@ from __future__ import annotations
 import enum
 import json
 import os
-from typing import Any, Dict
+from typing import Dict
 
 import bpy
 from bpy.types import ImageTexture, Material, Node
-import numpy as np
+# import numpy as np
 
 
-# TODO:
-# -- don't load textures more than once each
-# -- store metadata in material custom properties
+# NOTE: if RSX does not export all mips, filenames might not match
+def load_dds(asset_dir: str, asset_path: str) -> ImageTexture:
+    textures = [
+        texture.get("asset_path", None)
+        for texture in bpy.data.images]
+    if asset_path in textures:
+        texture_index = textures.index(asset_path)
+        return bpy.data.images[texture_index]
+
+    asset_filename = f"{asset_path}.dds"
+    full_path = search(asset_dir, asset_filename)
+    if full_path is None:
+        return None  # file not found
+
+    texture = bpy.data.images.load(full_path)
+    texture["asset_path"] = asset_path
+    return texture
+
+
+# TODO: .vtf -> blender texture
+# -- can we load .dds from bytes?
+# -- link temporary files?
+def load_vtf(asset_dir: str, asset_path: str) -> ImageTexture:
+    raise NotImplementedError()
+    # texture_path = search(asset_dir, f"{asset_path}.vtf")
+    # image = PIL.Image.frombytes(vtf.mipmaps[...])
+    # texture = bpy.data.images.new(
+    #     texture_path, width=image.width, height=image.height)
+    # pixel_array = np.asarray(image.convert("RGBA"), dtype=np.float32)
+    # texture.pixels[::] = (pixel_array / 255).ravel()
+
+
+# NOTE: load.props could also make use of this
+# NOTE: assumes "/" path separator in filename
+def search(folder: str, filename: str) -> str:
+    if not os.path.isdir(folder):
+        return None  # dead end
+    steps = filename.split("/")
+    target = steps[0].lower()
+    for filename in os.listdir(folder):
+        if filename.lower() == target:
+            if len(steps) > 1:  # 1 layer searched
+                next_folder = "/".join(folder, filename)
+                next_filename = "/".join(steps[1:])
+                return search(next_folder, next_filename)
+            else:
+                return filename  # full match!
+    return None  # file not found
 
 
 tool_colours = {
@@ -31,6 +76,46 @@ tool_colours = {
     "tools/toolsskybox": (0.441, 0.742, 0.967, .25),
     "tools/toolstrigger": (0.944, 0.048, 0.004, .25),
     "tools/toolstrigger_capturepoint": (0.273, 0.104, 0.409, .25)}
+
+
+def placeholder(asset_path: str, palette=tool_colours) -> Material:
+    """make a placeholder material to be loaded later"""
+    materials = [
+        material.get("asset_path", None)
+        for material in bpy.data.materials]
+    if asset_path in materials:
+        material_index = materials.index(asset_path)
+        return bpy.data.materials[material_index]
+
+    folder, filename = os.path.split(asset_path)
+    material = bpy.data.materials.new(filename)
+    material["asset_path"] = asset_path
+
+    # asset_path -> viewport colour & alpha
+    *colour, alpha = palette.get(
+        asset_path, (0.8, 0.8, 0.8, 1.0))
+    if asset_path.startswith("world/atmosphere"):
+        alpha = 0.25
+
+    # apply viewport colour & alpha
+    if alpha != 1:
+        material.blend_method = "BLEND"
+    material.diffuse_color = (*colour, alpha)
+    return material
+
+
+# NOTE: all_materials would be nice
+# -- but we need to determine MaterialClass after loading MATL / VMT
+# -- also need to search for _wld.json, _fix.json & .vmt
+def complete(mesh, MaterialClass):
+    for material in mesh.materials:
+        if material.use_nodes:
+            continue  # already loaded
+        if "asset_path" not in material:
+            continue  # not one of our placeholders
+        # TODO: try to load VMT / MATL
+        # -- shader type -> node assembler
+        MaterialClass.nodeify(material)
 
 
 # NOTE: entries marked w/ "*" aren't implemented
@@ -55,13 +140,15 @@ class Slot(enum.Enum):
     SPECULAR_2 = 26
 
 
-# TODO: shaderset -> preset (_bm_wld) etc.
-# -- base shader node type
-class NodeMaker:
+# TODO: class Material_fix
+# TODO: class Material_fix_unlit
+class Material_wld:
+    """generic level geometry shader constructor"""
     material: Material
     textures: Dict[Slot, str]
 
     def __init__(self):
+        self.material = None
         self.textures = dict()
 
     def add_albedo(self, texture, shader):
@@ -77,18 +164,11 @@ class NodeMaker:
         self.link_nodes(texture_node, "Alpha", shader, "Alpha")
         return texture_node
 
-    # TODO: blend modulate group node
-    # -- 6x math nodes
-    # --- - vc.a bm.c
-    # --- + +0.5 ^ (clamp) [blend_factor]
-    # --- * -2.0 ^
-    # --- + +3.0 ^
-    # --- * vc.a ^ [curve]
-    # --- * vc.a [blend_factor]
     def add_blend(self, texture, mix_shader):
         """quick & dirty blend modulate approximation"""
         vertex_colour = self.add_node("ShaderNodeVertexColor")
         texture_node = self.add_texture(texture, "Blend Mask")
+        # quick & dirty blend math that looks good enough
         mix_node = self.add_mixer("MIX")
         add_node = self.add_mixer("ADD")
         sub_node = self.add_mixer("SUBTRACT")
@@ -224,35 +304,20 @@ class NodeMaker:
         # TODO: make locations relative to links
 
     @classmethod
-    def material_from_name(cls, name: str, palette=tool_colours):
-        folder, filename = os.path.split(name)
-
-        # return early if material already exists
-        # NOTE: checking for filenames isn't ideal
-        if filename in bpy.data.materials:
-            return bpy.data.materials[filename]
-
+    def nodeify(cls, material: Material):
         out = cls()
-        out.material = bpy.data.materials.new(filename)
-        # viewport colour & alpha from name
-        *colour, alpha = palette.get(
-            name, (0.8, 0.8, 0.8, 1.0))
-        if name.startswith("world/atmosphere"):
-            alpha = 0.25
-        # set colour & alpha
-        if alpha != 1:
-            out.material.blend_method = "BLEND"
-        out.material.diffuse_color = (*colour, alpha)
+        out.material = material
+        asset_path = material["asset_path"]
 
         # try for vmt material (r1 & r2 [RARE])
-        # vmt = VMT.from_name(name)
+        # vmt = VMT.from_path(asset_path)
         # if vmt is not None:  # .vmt found
         #     out.textures = vmt.textures
         #     out.make_nodes()
         #     return out.material
 
         # try for rpak material (r2 & r5)
-        matl = MATL.from_name(name)
+        matl = MATL.from_path(asset_path)
         if matl is not None:  # _wld.json found
             out.textures = matl.textures
             out.make_nodes()
@@ -264,46 +329,27 @@ class NodeMaker:
 class MATL:
     """Titanfall 2 & Apex Legends .rpak material"""
     rsx_folder: str
-    textures: Dict[Slot, Any]
+    textures: Dict[Slot, ImageTexture]
     # ^ {Slot.ALBEDO: ImageTexture}
 
     def __init__(self):
         self.rsx_folder = bpy.context.scene.rbsp_prefs.rsx_folder
         self.textures = dict()
 
-    def load_texture(self, slot: Slot, texture_path: str) -> ImageTexture:
-        if texture_path.startswith("0x"):
-            return  # GUID, no filename
-        # NOTE: .dds w/ all mips only
-        # TODO: skip search if texture is already loaded
-        folder, filename = os.path.split(texture_path)
-        base_name = os.path.splitext(filename)[0]
-        search_folder = os.path.join(
-            self.rsx_folder, "exported_files", folder)
-        if not os.path.isdir(search_folder):
-            return
-        # case insensitive file search
-        search_filename = f"{base_name.lower()}.dds"
-        for dds_filename in os.listdir(search_folder):
-            if dds_filename.lower() == search_filename:
-                dds_path = os.path.join(search_folder, dds_filename)
-                texture = bpy.data.images.load(dds_path)
-                self.textures[slot] = texture
+    def load_texture(self, slot: Slot, asset_path: str):
+        search_folder = os.path.join(self.rsx_folder, "exported_files")
+        texture = load_dds(search_folder, asset_path)
+        if texture is not None:
+            self.textures[slot] = texture
+        # TODO: error texture w/ asset path
 
     @classmethod
-    def from_name(cls, name: str) -> MATL:
+    def from_path(cls, asset_path: str, type_: str) -> MATL:
         rsx_folder = bpy.context.scene.rbsp_prefs.rsx_folder
-        folder, filename = os.path.split(name)
-        search_folder = os.path.join(
-            rsx_folder, "exported_files/material", folder)
-        if not os.path.isdir(search_folder):
-            return
-        # case insensitive file search
-        search_filename = f"{filename.lower()}_wld.json"
-        for json_filename in os.listdir(search_folder):
-            if json_filename.lower() == search_filename:
-                json_path = os.path.join(search_folder, json_filename)
-                return cls.from_file(json_path)
+        search_folder = os.path.join(rsx_folder, "exported_files/material")
+        json_path = search(search_folder, f"{asset_path}_{type_}.json")
+        if json_path is not None:
+            return cls.from_file(json_path)
 
     @classmethod
     def from_file(cls, filename: str) -> MATL:
@@ -315,52 +361,51 @@ class MATL:
         out = cls()
         matl_textures = json_.get("$textures", dict())
         matl_slot_names = json_.get("$textureTypes")
-        for key, texture_path in matl_textures.items():
+        for key, asset_path in matl_textures.items():
             try:
                 slot = Slot(int(key))
             except ValueError:
                 slot = (int(key), matl_slot_names.get(key, None))
-            out.load_texture(slot, texture_path)
+            if not asset_path.startswith("0x"):  # not a GUID
+                out.load_texture(slot, asset_path)
         return out
 
 
 class VMT:
     """Valve Material w/ some respawn-specific features"""
     vpk_folder: str
-    textures: Dict[Slot, Any]
+    textures: Dict[Slot, ImageTexture]
     # ^ {Slot.ALBEDO: ImageTexture}
+    # TODO: shader type -> node maker
 
     def __init__(self):
         self.vpk_folder = bpy.context.scene.rbsp_prefs.vpk_folder
         self.textures = dict()
 
-    def load_texture(self, slot: Slot, texture_path: str) -> ImageTexture:
-        full_texture_path = os.path.join(self.vpk_folder, texture_path)
-        if not os.path.exists(full_texture_path):
-            return None
-        # TODO: check to see if texture is already loaded
-        # -- return if found
-        # TODO: .vtf -> PIL.Image (@ target miplevel)
-        # -- MRVN-VMT & respawn_cubemap_tool should be good references
-        # -- can we feed Blender the .vtf as a .dds? (convert w/ bite)
-        # NOTE: Pillow should be available as a dependency of bsp_tool
-        image = ...
-        raise NotImplementedError()
-        texture = bpy.data.images.new(
-            texture_path, width=image.width, height=image.height)
-        pixel_array = np.asarray(image.convert("RGBA"), dtype=np.float32)
-        texture.pixels[::] = (pixel_array / 255).ravel()
-        self.textures[slot] = texture
+    def load_texture(self, slot: Slot, asset_path: str) -> ImageTexture:
+        search_folder = os.path.join(self.vpk_folder, "materials")
+        texture = load_vtf(search_folder, asset_path)
+        if texture is not None:
+            self.textures[slot] = texture
+        # TODO: error texture w/ asset path
 
     @classmethod
-    def from_name(cls, name) -> VMT:
+    def from_path(cls, asset_path: str) -> VMT:
         vpk_folder = bpy.context.scene.rbsp_prefs.vpk_folder
-        out = cls()
+        search_folder = os.path.join(vpk_folder, "materials")
+        vmt_path = search(search_folder, f"{asset_path}.vmt")
+        if vmt_path is not None:
+            return cls.from_file(vmt_path)
+
+    @classmethod
+    def from_file(cls, filename: str):
         raise NotImplementedError()
-        # TODO: parse .vmt (w/ `bite`)
-        # -- shader type
-        vtfs: Dict[Slot, str] = ...
-        out.textures = {
-            slot: cls.load_texture(texture_path)
-            for slot, texture_path in vtfs}
+        # vmt = bite.Vmt.from_file(vmt_path)
+        # return cls.from_vmt(vmt)
+
+    @classmethod
+    def from_vmt(cls, vmt) -> VMT:
+        raise NotImplementedError()
+        out = cls()
+        # $baseTexture -> out.load_texture(Slot.ALBEDO, ...)
         return out
