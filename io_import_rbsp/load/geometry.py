@@ -22,10 +22,6 @@ def get_lightmap_uv(vertices, index):
     return (u, 1 - v)
 
 
-# TODO: ass.geometry.Model -> Blender Model
-# -- def from_model(...) -> Mesh:
-
-
 def all_models(bsp, geometry_collection: Collection):
     for i, model in enumerate(bsp.MODELS):
         model = bsp.model(i)
@@ -42,7 +38,6 @@ def all_models(bsp, geometry_collection: Collection):
         indices = list(itertools.chain([
             (i + 2, i + 1, i + 0)
             for i in range(0, len(vertices), 3)]))
-        # TODO: map index ranges for each material
 
         model_name = name_of(model.entity)
         if model_name is None:

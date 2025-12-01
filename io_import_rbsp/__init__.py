@@ -1,4 +1,3 @@
-import os
 from typing import Dict
 
 import bpy
@@ -6,7 +5,6 @@ from bpy_extras.io_utils import ImportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Collection, Operator
 
-from ass.scene.valve import Mdl
 import bsp_tool
 
 from . import load
@@ -140,7 +138,7 @@ def make_entity_collections(bsp_collection) -> Dict[str, Collection]:
 
 class ImportMATL(Operator, ImportHelper):
     """Load .rpak MATL asset"""
-    bl_idname = "io.import_rbsp.matl_import"
+    bl_idname = "io_import_rbsp.matl_import"
     bl_label = "Titanfall Engine MATL"
     filename_ext = ".json"
     filter_glob: StringProperty(
@@ -169,27 +167,23 @@ class ImportMDL(Operator, ImportHelper):
     # -- BoolProperty load materials
 
     def execute(self, context):
-        try:
-            mdl = Mdl.from_file(self.filepath)
-        except Exception:
-            self.report({"ERROR_INVALID_INPUT"}, "Not a Titanfall 2 v53 .mdl")
-            return {"CANCELLED"}
-
-        base_name = os.path.basename(mdl.filename)
-        base_name = os.path.splitext(base_name)[0]
-        target = f"{base_name}.lod0"
-        # NOTE: these functions don't exist yet
-        mesh = load.geometry.from_model(mdl.models[target])
-        load.materials.complete(mesh)
-        # TODO: mesh -> blender object
-        # -- obj = utils.objectify(mesh, name=base_name)
-        # -- obj.custom_data["filepath"] = mdl.name
+        # TODO: error msg on unsupported .mdl format:
+        # -- self.report({"ERROR_INVALID_INPUT"}, "Not a Titanfall v53 .mdl")
+        # -- return {"CANCELLED"}
+        mesh = load.props.load_model(self.filepath)
+        name = mesh.name.partition(".")[0]
+        mdl_object = bpy.data.objects.new(name, mesh)
+        # link to view layer
+        view_collection = context.view_layer.active_layer_collection.collection
+        view_collection.objects.link(mdl_object)
+        context.view_layer.objects.active = mdl_object
+        return {"FINISHED"}
 
 
 # NOTE: not yet implemented
 # class ImportVMT(Operator, ImportHelper):
 #     """Load Titanfall Engine .vmt"""
-#     bl_idname = "io.import_rbsp.vmt_import"
+#     bl_idname = "io_import_rbsp.vmt_import"
 #     bl_label = "Titanfall Engine .vmt"
 #     filename_ext = ".vmt"
 #     filter_glob: StringProperty(
