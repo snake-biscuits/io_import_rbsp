@@ -74,11 +74,6 @@ class ImportRBSP(Operator, ImportHelper):
             geo_collection = make_collection(bsp_collection, "geometry")
             load.geometry.all_models(bsp, geo_collection)
 
-        if self.load_materials:
-            load.materials.all_materials()  # update all placeholders
-        # TODO: report how many materials were loaded from files
-        # -- self.report({"INFO"}, "{x} / {total} materials loaded")
-
         # solid & point entities
         if self.load_triggers or self.load_entities:
             ent_collections = make_entity_collections(bsp_collection)
@@ -94,6 +89,11 @@ class ImportRBSP(Operator, ImportHelper):
             load.props.as_empties(bsp, prop_collection)
         elif self.load_props == "Models":
             load.props.static_props(bsp, prop_collection)
+
+        if self.load_materials:
+            load.materials.all_materials()  # update all placeholders
+        # TODO: report how many materials were loaded from files
+        # -- self.report({"INFO"}, "{x} / {total} materials loaded")
 
         # TODO: scale the whole import (Engine Units -> Inches)
         # TODO: override default view clipping (16 near, 102400 far)
