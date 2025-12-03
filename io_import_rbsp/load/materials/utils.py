@@ -55,7 +55,7 @@ def search(folder: str, filename: str) -> str:
     for filename in os.listdir(folder):
         if filename.lower() == target:
             if len(steps) > 1:  # 1 layer searched
-                next_folder = "/".join(folder, filename)
+                next_folder = "/".join([folder, filename])
                 next_filename = "/".join(steps[1:])
                 return search(next_folder, next_filename)
             else:

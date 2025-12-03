@@ -26,7 +26,7 @@ def as_empties(bsp, prop_collection: Collection):
             bsp.GAME_LUMP.sprp.model_names[prop.model_name], None)
         prop_object.empty_display_type = "SPHERE"
         prop_object.empty_display_size = 64
-        prop_object.location = [*prop.origin]
+        prop_object.location = tuple(prop.origin)
         prop_object.rotation_euler = mathutils.Euler(
             (prop.angles[2], prop.angles[0], 90 + prop.angles[1]))
         prop_collection.objects.link(prop_object)
@@ -37,14 +37,18 @@ def static_props(bsp, prop_collection: Collection):
     if not os.path.isdir(vpk_folder):
         return
     meshes = [
-        load_model(vpk_folder, model_name)
-        for model_name in bsp.GAME_LUMP.model_names]
+        load_model(model_path(vpk_folder, model_name))
+        for model_name in bsp.GAME_LUMP.sprp.model_names]
 
-    for prop in bsp.GAME_LUMP.props:
+    for prop in bsp.GAME_LUMP.sprp.props:
         mesh = meshes[prop.model_name]
-        name = mesh.name.partition(".")[0]
+        path = bsp.GAME_LUMP.sprp.model_names[prop.model_name]
+        name = os.path.basename(path).lower()
         prop_object = bpy.data.objects.new(name, mesh)
-        prop_object.location = prop.origin
+        if mesh is None:
+            prop_object.empty_display_type = "SPHERE"
+            prop_object.empty_display_size = 64
+        prop_object.location = tuple(prop.origin)
         prop_object.rotation_euler = mathutils.Euler(
             (prop.angles[2], prop.angles[0], 90 + prop.angles[1]))
         prop_collection.objects.link(prop_object)
