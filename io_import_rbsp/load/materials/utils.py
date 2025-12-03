@@ -59,7 +59,7 @@ def search(folder: str, filename: str) -> str:
                 next_filename = "/".join(steps[1:])
                 return search(next_folder, next_filename)
             else:
-                return filename  # full match!
+                return os.path.join(folder, filename)  # full match!
     return None  # file not found
 
 

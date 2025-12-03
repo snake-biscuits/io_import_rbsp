@@ -55,11 +55,11 @@ def static_props(bsp, prop_collection: Collection):
 
 
 def model_path(vpk_folder: str, asset_path: str) -> str:
-    filepath = os.path.join(vpk_folder, f"{asset_path}.mdl")
+    filepath = os.path.join(vpk_folder, asset_path)
     if os.path.exists(filepath):
         return filepath  # case-senstive match
     else:  # try for case-insensitive match
-        return search(vpk_folder, f"{asset_path}.mdl")
+        return search(vpk_folder, asset_path)
 
 
 def load_model(filepath: str) -> Mesh:
