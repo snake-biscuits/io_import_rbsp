@@ -80,6 +80,7 @@ def all_models(bsp, geometry_collection: Collection):
         material_indices = dict()
         for material in {sub_mesh.material for sub_mesh in model.meshes}:
             blender_material = placeholder(material.name)
+            blender_material["shader_type"] = "wld"
             mesh.materials.append(blender_material)
             material_indices[material.name] = len(mesh.materials) - 1
 
