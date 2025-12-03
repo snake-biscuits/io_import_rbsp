@@ -4,6 +4,7 @@ from typing import Dict
 from bpy.types import ImageTexture, Material, Node
 
 from .utils import Slot
+from .matl import MATL
 
 
 class WorldMaterial:
