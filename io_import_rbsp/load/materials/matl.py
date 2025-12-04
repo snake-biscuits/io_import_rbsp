@@ -18,8 +18,7 @@ def load_dds(asset_dir: str, asset_path: str) -> ImageTexture:
         texture_index = textures.index(asset_path)
         return bpy.data.images[texture_index]
 
-    asset_filename = f"{asset_path}.dds"
-    full_path = search(asset_dir, asset_filename)
+    full_path = search(asset_dir, asset_path)
     if full_path is None:
         return None  # file not found
 
@@ -40,6 +39,8 @@ class MATL:
 
     def load_texture(self, slot: Slot, asset_path: str):
         search_folder = os.path.join(self.rsx_folder, "exported_files")
+        assert asset_path.endswith(".rpak")
+        asset_path = f"{asset_path[:-5]}.dds"
         texture = load_dds(search_folder, asset_path)
         if texture is not None:
             self.textures[slot] = texture
