@@ -71,19 +71,19 @@ def placeholder(asset_path: str, palette=tool_colours) -> Material:
     if asset_path in materials:
         material_index = materials.index(asset_path)
         return bpy.data.materials[material_index]
-
+    # create new material w/ name & asset_path
     folder, filename = os.path.split(asset_path)
     material = bpy.data.materials.new(filename)
     material["asset_path"] = asset_path
-
     # asset_path -> viewport colour & alpha
     *colour, alpha = palette.get(
         asset_path, (0.8, 0.8, 0.8, 1.0))
     if asset_path.startswith("world/atmosphere"):
         alpha = 0.25
-
     # apply viewport colour & alpha
     if alpha != 1:
         material.blend_method = "BLEND"
     material.diffuse_color = (*colour, alpha)
+    # tag for complete.all_materials
+    material["is_placeholder"] = True
     return material
