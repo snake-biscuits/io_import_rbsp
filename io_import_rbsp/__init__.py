@@ -145,8 +145,9 @@ class ImportMATL(Operator, ImportHelper):
         default="*.json", options={"HIDDEN"}, maxlen=255)  # noqa F722
 
     def execute(self, context):
-        maker = load.materials.NodeMaker()
         matl = load.materials.MATL.from_file(self.filepath)
+        # TODO: choose maker for MATL type ("fix", "wld" etc.)
+        maker = load.materials.WorldMaterial()
         maker.textures = matl.textures
         maker.make_nodes()
         del maker, matl
