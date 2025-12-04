@@ -49,8 +49,7 @@ def static_props(bsp, prop_collection: Collection):
             prop_object.empty_display_type = "SPHERE"
             prop_object.empty_display_size = 64
         prop_object.location = tuple(prop.origin)
-        prop_object.rotation_euler = mathutils.Euler(
-            (prop.angles[2], prop.angles[0], 90 + prop.angles[1]))
+        prop_object.rotation_euler = mathutils.Euler(*prop.angles)
         prop_collection.objects.link(prop_object)
 
 
