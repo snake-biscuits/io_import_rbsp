@@ -1,4 +1,5 @@
 import itertools
+import math
 import os
 
 import bpy
@@ -27,8 +28,9 @@ def as_empties(bsp, prop_collection: Collection):
         prop_object.empty_display_type = "SPHERE"
         prop_object.empty_display_size = 64
         prop_object.location = tuple(prop.origin)
+        radians = list(map(math.radians, prop.angles))
         prop_object.rotation_euler = mathutils.Euler(
-            (prop.angles[2], prop.angles[0], 90 + prop.angles[1]))
+            (radians[2], radians[0], radians[1]), "YZX")
         prop_collection.objects.link(prop_object)
 
 
@@ -49,7 +51,9 @@ def static_props(bsp, prop_collection: Collection):
             prop_object.empty_display_type = "SPHERE"
             prop_object.empty_display_size = 64
         prop_object.location = tuple(prop.origin)
-        prop_object.rotation_euler = mathutils.Euler(*prop.angles)
+        radians = list(map(math.radians, prop.angles))
+        prop_object.rotation_euler = mathutils.Euler(
+            (radians[2], radians[0], radians[1]), "YZX")
         prop_collection.objects.link(prop_object)
 
 
