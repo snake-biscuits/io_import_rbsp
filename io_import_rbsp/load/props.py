@@ -69,7 +69,10 @@ def load_model(filepath: str) -> Mesh:
     if filepath is None:
         return  # search() FileNotFound
     mdl = Mdl.from_file(filepath)
-    mdl.parse()
+    try:
+        mdl.parse()
+    except Exception:
+        return None  # failed to parse
     base_name = os.path.splitext(mdl.filename)[0]
     model_name = f"{base_name}.lod0"
     model = mdl.models[model_name]
