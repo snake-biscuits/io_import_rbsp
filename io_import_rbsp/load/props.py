@@ -31,6 +31,7 @@ def as_empties(bsp, prop_collection: Collection):
         radians = list(map(math.radians, prop.angles))
         prop_object.rotation_euler = mathutils.Euler(
             (radians[2], radians[0], radians[1]), "YZX")
+        prop_object.scale = (prop.scale,) * 3
         prop_collection.objects.link(prop_object)
 
 
@@ -54,6 +55,7 @@ def static_props(bsp, prop_collection: Collection):
         radians = list(map(math.radians, prop.angles))
         prop_object.rotation_euler = mathutils.Euler(
             (radians[2], radians[0], radians[1]), "YZX")
+        prop_object.scale = (prop.scale,) * 3
         prop_collection.objects.link(prop_object)
 
 
