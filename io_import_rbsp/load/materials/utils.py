@@ -63,18 +63,18 @@ def search(folder: str, filename: str) -> str:
     return None  # file not found
 
 
-def placeholder(asset_path: str, palette=tool_colours) -> Material:
+def placeholder(asset_path: str, shader_type: str, palette=tool_colours) -> Material:
     """make a placeholder material to be loaded later"""
-    materials = [
-        material.get("asset_path", None)
-        for material in bpy.data.materials]
-    if asset_path in materials:
-        material_index = materials.index(asset_path)
-        return bpy.data.materials[material_index]
-    # create new material w/ name & asset_path
+    materials = {
+        (material.get("asset_path", None), material.get("shader_type", None)): material
+        for material in bpy.data.materials}
+    if (asset_path, shader_type) in materials:
+        return materials[(asset_path, shader_type)]
+    # create new material w/ name, asset_path & shader_type
     folder, filename = os.path.split(asset_path)
     material = bpy.data.materials.new(filename)
     material["asset_path"] = asset_path
+    material["shader_type"] = shader_type
     # asset_path -> viewport colour & alpha
     *colour, alpha = palette.get(
         asset_path, (0.8, 0.8, 0.8, 1.0))

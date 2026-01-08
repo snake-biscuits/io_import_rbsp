@@ -173,8 +173,7 @@ class WorldMaterial:
         out = cls()
         out.material = material
         asset_path = material["asset_path"]
-        # NOTE: shader_type is not set in placeholder
-        # -- the caller handles it instead
+        # NOTE: shader_type is set when utils.placeholder is called
         # -- "wld" for .bsp geo; "fix" for .mdl geo
 
         # try for vmt material (r1 & r2 [RARE])
