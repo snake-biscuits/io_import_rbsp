@@ -32,6 +32,7 @@ class MATL:
     rsx_folder: str
     textures: Dict[Slot, ImageTexture]
     # ^ {Slot.ALBEDO: ImageTexture}
+    # TODO: expose shader_type & shaderset (GUID)
 
     def __init__(self):
         self.rsx_folder = bpy.context.scene.rbsp_prefs.rsx_folder

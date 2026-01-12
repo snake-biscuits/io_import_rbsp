@@ -1,3 +1,4 @@
+import os
 from typing import Dict
 
 import bpy
@@ -148,6 +149,9 @@ class ImportMATL(Operator, ImportHelper):
         matl = load.materials.MATL.from_file(self.filepath)
         # TODO: choose maker for MATL type ("fix", "wld" etc.)
         maker = load.materials.WorldMaterial()
+        folder, filename = os.path.split(self.filepath)
+        maker.material = bpy.data.materials.new(filename)
+        # TODO: store asset_path & shader_type
         maker.textures = matl.textures
         maker.make_nodes()
         del maker, matl
