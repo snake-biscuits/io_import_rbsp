@@ -102,6 +102,11 @@ Once you've extracted the files you need:
  * Wait a few minutes (Can easily take 1hr+ on Apex Legends maps)
 
 
+## Thanks
+ * [EM4Volts](https://github.com/EM4Volts)
+   - Built the table of shaderset GUIDs used for material imports
+
+
 ## Other Tools
 
 ### Respawn VPK

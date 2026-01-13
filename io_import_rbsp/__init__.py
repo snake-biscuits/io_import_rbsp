@@ -178,6 +178,10 @@ class ImportMDL(Operator, ImportHelper):
         mesh = load.props.load_model(self.filepath)
         name = mesh.name.partition(".")[0]
         mdl_object = bpy.data.objects.new(name, mesh)
+        # load materials
+        for slot in mdl_object.material_slots:
+            load.materials.FixMaterial.nodeify(slot.material)
+            del slot.material["is_placeholder"]
         # link to view layer
         view_collection = context.view_layer.active_layer_collection.collection
         view_collection.objects.link(mdl_object)

@@ -1,7 +1,7 @@
 import bpy
 
 from .wld import WorldMaterial
-# from .fix import FixMaterial
+from .fix import FixMaterial
 
 
 def all_materials():
@@ -14,5 +14,6 @@ def all_materials():
         if shader_type == "wld":
             WorldMaterial.nodeify(material)
             del material["is_placeholder"]
-        # elif shader_type == "fix":
-        #     FixMaterial.nodeify(material)
+        elif shader_type == "fix":
+            FixMaterial.nodeify(material)
+            del material["is_placeholder"]

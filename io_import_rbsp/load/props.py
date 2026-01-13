@@ -23,16 +23,24 @@ from .materials import placeholder, search
 def as_empties(bsp, prop_collection: Collection):
     """Requires all models to be extracted beforehand"""
     for prop in bsp.GAME_LUMP.sprp.props:
-        prop_object = bpy.data.objects.new(
-            bsp.GAME_LUMP.sprp.model_names[prop.model_name], None)
-        prop_object.empty_display_type = "SPHERE"
-        prop_object.empty_display_size = 64
-        prop_object.location = tuple(prop.origin)
+        path = bsp.GAME_LUMP.sprp.model_names[prop.model_name]
+        name = os.path.basename(path).lower()
+        empty = bpy.data.objects.new(name, None)
+        empty["asset_path"] = path
+        empty.empty_display_type = "SPHERE"
+        empty.empty_display_size = 64
+        empty.location = tuple(prop.origin)
         radians = list(map(math.radians, prop.angles))
-        prop_object.rotation_euler = mathutils.Euler(
+        empty.rotation_euler = mathutils.Euler(
             (radians[2], radians[0], radians[1]), "YZX")
-        prop_object.scale = (prop.scale,) * 3
-        prop_collection.objects.link(prop_object)
+        empty.scale = (prop.scale,) * 3
+        # empty.color = [c / 255 for c in prop.diffuse_modulation]
+        # blend (lerp) white (exp0) -> mdl.rgb (exp255)
+        r, g, b, exponent = prop.diffuse_modulation
+        exponent = exponent / 255
+        rgb = [(255 + exponent * (c - 255)) / 255 for c in (r, g, b)]
+        empty.color = (*rgb, 1.0)
+        prop_collection.objects.link(empty)
 
 
 def static_props(bsp, prop_collection: Collection):
@@ -51,11 +59,17 @@ def static_props(bsp, prop_collection: Collection):
         if mesh is None:
             prop_object.empty_display_type = "SPHERE"
             prop_object.empty_display_size = 64
+            prop_object["asset_path"] = path
         prop_object.location = tuple(prop.origin)
         radians = list(map(math.radians, prop.angles))
         prop_object.rotation_euler = mathutils.Euler(
             (radians[2], radians[0], radians[1]), "YZX")
         prop_object.scale = (prop.scale,) * 3
+        # blend (lerp) white (exp0) -> mdl.rgb (exp255)
+        r, g, b, exponent = prop.diffuse_modulation
+        exponent = exponent / 255
+        rgb = [(255 + exponent * (c - 255)) / 255 for c in (r, g, b)]
+        prop_object.color = (*rgb, 1.0)
         prop_collection.objects.link(prop_object)
 
 
@@ -122,5 +136,4 @@ def load_model(filepath: str) -> Mesh:
             for tri in indices])
 
     mesh.update()
-    mesh["asset_path"] = mdl.name
     return mesh

@@ -173,12 +173,12 @@ class WorldMaterial:
         out = cls()
         out.material = material
         asset_path = material["asset_path"]
-        # NOTE: shader_type is set when utils.placeholder is called
-        # -- "wld" for .bsp geo; "fix" for .mdl geo
+        # assert material["shader_type"] == "wld"
 
         # try for vmt material (r1 & r2 [RARE])
         # vmt = VMT.from_path(asset_path)
         # if vmt is not None:  # .vmt found
+        #     out.material["shader"] = vmt.shader
         #     out.textures = vmt.textures
         #     out.make_nodes()
         #     return out.material
@@ -186,6 +186,7 @@ class WorldMaterial:
         # try for rpak material (r2 & r5)
         matl = MATL.from_path(asset_path, "wld")
         if matl is not None:  # found MATL .json
+            out.material["shader_set"] = matl.shader_set_name
             out.textures = matl.textures
             out.make_nodes()
             return out.material

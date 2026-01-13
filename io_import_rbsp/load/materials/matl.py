@@ -7,6 +7,7 @@ import bpy
 from bpy.types import ImageTexture
 
 from .utils import search, Slot
+from . import shaderset
 
 
 # NOTE: if RSX does not export all mips, filenames might not match
@@ -30,12 +31,17 @@ def load_dds(asset_dir: str, asset_path: str) -> ImageTexture:
 class MATL:
     """Titanfall 2 & Apex Legends .rpak material"""
     rsx_folder: str
+    shader_set_name: str
+    shader_set_guid: int
+    shader_type: str
     textures: Dict[Slot, ImageTexture]
     # ^ {Slot.ALBEDO: ImageTexture}
-    # TODO: expose shader_type & shaderset (GUID)
 
     def __init__(self):
         self.rsx_folder = bpy.context.scene.rbsp_prefs.rsx_folder
+        self.shader_set_name = ""
+        self.shader_set_guid = None
+        self.shader_type = None
         self.textures = dict()
 
     def load_texture(self, slot: Slot, asset_path: str):
@@ -63,6 +69,10 @@ class MATL:
     @classmethod
     def from_json(cls, json_: Dict) -> MATL:
         out = cls()
+        guid = int(json_["shaderSet"][2:], 16)
+        out.shader_set_guid = guid
+        out.shader_set_name = shaderset.guid_name.get(guid, "")
+        out.shader_type = json_["shaderType"]
         matl_textures = json_.get("$textures", dict())
         matl_slot_names = json_.get("$textureTypes")
         for key, asset_path in matl_textures.items():
