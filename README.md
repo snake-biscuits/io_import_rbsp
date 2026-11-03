@@ -75,8 +75,8 @@ For this stage you will need [RSX](https://github.com/r-ex/rsx/)
 Important Settings:
  * Export asset names, not GUIDs
  * Full asset paths
- * Material as .json (Raw Struct)
- * Texture as .dds (All Mips)
+ * Material as `.json` (Raw Struct)
+ * Texture as `.dds` (Mipmapped)
 
 Extract all `_wld` & `_fix` materials.
 Textures linked to materials should be exported automatically.
